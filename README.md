@@ -5,7 +5,13 @@ Radiance Music on iOS: a Swift and SwiftUI twin of the Android app
 JSON, library files and share wire as the Android app and the computer app
 ([radiance-music](https://github.com/RadianceADM/radiance-music)). No music videos on mobile.
 
-**Status: 0.1.0 in progress (stage 0).** The app opens. Search, Library and Now Playing come next.
+**Status: 0.1.0 in progress.** On the test iPhone: search (Internet Archive first, YouTube Music after), playing in
+the background with the lock screen's controls, the queue, Liked Songs with Albums, Artists and Genres, lyrics,
+the Mixer (karaoke, vocals only, low cut, high cut, reverb), splitting on the iPhone (Spleeter on ONNX Runtime),
+sharing songs by QR with phones and the computer, Radiance Music Server libraries, story cards. Not released yet.
+
+A YouTube song plays from a joined server's copy when the server has it, else from YouTube itself (the owner's rule
+for every app). A song split on the iPhone goes up to the server it joined.
 
 ## Layout
 
@@ -23,7 +29,8 @@ Built on Linux with [xtool](https://github.com/xtool-org/xtool) and the Swift 6.
 ```
 scripts/ribs.sh test      # RadianceKit tests (Linux)
 scripts/ribs.sh build     # the .ipa, copied back to build/
-scripts/ribs.sh install   # build, sign with the Apple ID, install on the iPhone plugged into this computer
+scripts/ribs.sh install   # build (release), sign with the Apple ID, install on the iPhone plugged into this computer
+scripts/push-library.sh   # the computer's liked songs (with covers, lyrics, parts) onto the iPhone
 scripts/ribs.sh clean     # delete the server's build folder
 ```
 
