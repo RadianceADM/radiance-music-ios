@@ -45,7 +45,7 @@ struct MixerSheet: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Split “\(track.title)” on this iPhone for karaoke and vocals only. It takes a minute or two (the first time it also gets the splitter, 39 MB).")
                                 .font(.system(size: 14)).foregroundStyle(Brand.dim)
-                            Button { app.splitter.split(track) } label: { Label("Split it", systemImage: "scissors") }
+                            Button { app.splitter.split(track) } label: { Label("Split it", systemImage: "scissors").labelStyle(.titleAndIcon) }
                                 .buttonStyle(.borderedProminent)
                         }
                     }
