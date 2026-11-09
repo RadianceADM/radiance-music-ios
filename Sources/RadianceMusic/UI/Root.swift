@@ -34,10 +34,12 @@ struct RootView: View {
         .sheet(isPresented: $settings) { SettingsScreen() }
         .onChange(of: phase) { _, p in if p != .active { app.player.saveSession() } }
         .task {
+            app.startUp()
             // checking from the laptop (AppModel.test)
             if app.test["RM_SEARCH"] != nil { tab = .search }
             if app.test["RM_OPEN"] == "library" { tab = .library }
             try? await Task.sleep(for: .seconds(Double(app.test["RM_OPEN_AFTER"] ?? "0") ?? 0))
+            if let n = app.test["RM_PLAY_LIKED"].flatMap(Int.init), app.library.liked.indices.contains(n) { app.player.play(app.library.liked, n) }
             if app.test["RM_OPEN"] == "nowplaying" { nowPlaying = true }
             if app.test["RM_OPEN"] == "settings" { settings = true }
         }
@@ -49,6 +51,7 @@ struct RootView: View {
             content()
                 .background(Brand.night)
                 .toolbar(.hidden, for: .navigationBar)
+                .navigationDestination(for: ShelfPick.self) { GroupSongsView(pick: $0) }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if app.player.current != nil {

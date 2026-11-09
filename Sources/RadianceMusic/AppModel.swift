@@ -1,3 +1,4 @@
+import AVFoundation
 import Network
 import RadianceKit
 import SwiftUI
@@ -37,7 +38,7 @@ final class AppModel {
     /**
      * For checking on the iPhone from the laptop (`pymobiledevice3 developer dvt launch --env RM_SEARCH=…`): a search
      * to run (RM_SEARCH), the result to play (RM_PLAY, from 0), a screen to open (RM_OPEN: nowplaying, settings,
-     * library). Nothing happens without them.
+     * library), a liked song to play (RM_PLAY_LIKED, from 0). Nothing happens without them.
      */
     @ObservationIgnored let test = ProcessInfo.processInfo.environment
 
@@ -50,7 +51,12 @@ final class AppModel {
         hub = PlayerHub(app: self)
         monitor.pathUpdateHandler = { [weak self] path in
             let up = path.status == .satisfied
-            Task { @MainActor in self?.online = up }
+            Task { @MainActor in
+                guard let self else { return }
+                let was = self.online
+                self.online = up
+                if up && !was { self.backOnline() }
+            }
         }
         monitor.start(queue: DispatchQueue(label: "radiance.online"))
         Task { await servers.refresh(online: online) }
@@ -78,35 +84,180 @@ final class AppModel {
         } else {
             library.like(t)
             save(t)
+            fillGenres()
         }
     }
 
-    /**
-     * A liked song saved on the iPhone with its cover and lyrics (Documents/Radiance Music, seen in Files). A YouTube
-     * song from a joined server's copy when it has one, else from YouTube.
-     */
+    /** Saved in the background (one song at a time, as Android does). */
     func save(_ t: Track) {
+        Task { _ = await saveNow(t) }
+    }
+
+    @ObservationIgnored private var queueOfSaves: Task<Void, Never>?
+
+    /**
+     * A liked song saved on the iPhone with its cover and lyrics (Documents/Radiance Music, seen in Files): a joined
+     * server's copy when it has one (owner, 2026-11-09, for every app), else from where it's from. Saved or not.
+     */
+    @discardableResult
+    func saveNow(_ t: Track) async -> Bool {
+        // one at a time: each waits for the one before
+        let before = queueOfSaves
+        let mine = Task { @MainActor in
+            await before?.value
+            await self.saveOne(t)
+        }
+        queueOfSaves = Task { await mine.value }
+        await mine.value
+        return library.best(t).file.map { paths.file($0).map { FileManager.default.fileExists(atPath: $0.path) } ?? false } ?? false
+    }
+
+    private func saveOne(_ t0: Track) async {
+        let t = library.best(t0)
+        if let f = paths.file(t.file), FileManager.default.fileExists(atPath: f.path) {
+            try? await Saver.cover(paths, t)
+            _ = await Saver.lyrics(paths, t)
+            return
+        }
         guard saving[t.key] == nil else { return }
         saving[t.key] = 0
-        Task {
-            defer { saving[t.key] = nil }
-            do {
-                var song = t
-                if t.source == .youtube && t.file == nil, let (_, copy) = await servers.copy(of: t) {
-                    let ext = (copy.file.split(separator: ".").last.map(String.init) ?? "m4a").lowercased()
-                    let f = Saver.place(paths, Saver.name(t), ext)
-                    let key = t.key
-                    try await Http.download(servers.sign(copy.url), to: f) { p in Task { @MainActor in self.saving[key] = p } }
-                    song.file = paths.name(of: f)
-                }
+        defer { saving[t.key] = nil }
+        do {
+            var song = t
+            song.file = nil
+            if t.source != .server, let (_, copy) = await servers.copy(of: t) {
+                let ext = (copy.file.split(separator: ".").last.map(String.init) ?? "m4a").lowercased()
+                let f = Saver.place(paths, Saver.name(t), ext)
                 let key = t.key
-                let saved = try await Saver.save(paths, song) { p in Task { @MainActor in self.saving[key] = p } }
-                if library.isLiked(saved.key) { library.update(saved) }
-                player.refresh(saved)
-                Saver.coverKept(saved.key)
-            } catch {
+                try await Http.download(servers.sign(copy.url), to: f) { p in Task { @MainActor in self.saving[key] = p } }
+                song.file = paths.name(of: f)
+            }
+            let key = t.key
+            let saved = try await Saver.save(paths, song, progress: { p in Task { @MainActor in self.saving[key] = p } })
+            if library.isLiked(saved.key) { library.update(saved) }
+            player.refresh(saved)
+            Saver.coverKept(saved.key)
+        } catch {
+            if !online || Errors.network(error) {
+                if !toldOffline { tell("You're offline. Liked songs are saved when you're back online.") }
+                toldOffline = true
+            } else {
                 let why = (error as? Refused)?.words ?? Errors.say(error, online: online)
                 tell("Couldn't save “\(t.title)”. \(why)", action: ("Retry", { [weak self] in self?.save(t) }))
+            }
+        }
+    }
+
+    @ObservationIgnored private var toldOffline = false
+
+    // MARK: - by themselves (Android's App: at start, and back online)
+
+    /** What it's doing in the background ("Bringing back your saved songs · 3 of 10"). */
+    private(set) var status: String?
+
+    @ObservationIgnored private var started = false
+
+    func startUp() {
+        guard !started else { return }
+        started = true
+        if Import.waiting(paths) { importLibrary() } else { findSaved(auto: true) }
+        saveMissing()
+        sharpenCovers()
+        fillGenres()
+    }
+
+    /** Back online: what waited for the internet goes on. */
+    private func backOnline() {
+        toldOffline = false
+        saveMissing()
+        sharpenCovers()
+        fillGenres()
+        Task { await servers.refresh(online: online) }
+    }
+
+    /** Your library from the computer, read into Liked Songs (once it's in Documents/Library; see Import). */
+    func importLibrary() {
+        Task {
+            do {
+                let n = try Import.run(paths, library)
+                tell("Your library from the computer: \(n) songs in Liked Songs.")
+                fillGenres()
+            } catch {
+                tell("Couldn't read your library. \(Errors.say(error, online: online))", action: ("Retry", { [weak self] in self?.importLibrary() }))
+            }
+        }
+    }
+
+    @ObservationIgnored private var finding: Task<Void, Never>?
+
+    /**
+     * Songs in Documents/Radiance Music back into Liked Songs (see Found): by itself each time the app opens ([auto]),
+     * with nothing to do for you, or from Settings any time.
+     */
+    func findSaved(auto: Bool) {
+        if finding != nil { return }
+        finding = Task {
+            defer { finding = nil; status = nil }
+            let (back, of) = await Found.run(paths, library, everything: !auto, length: { u in
+                let d = try? await AVURLAsset(url: u).load(.duration)
+                return d.map { Int($0.seconds.isFinite ? $0.seconds : 0) } ?? 0
+            }, say: { [weak self] done, of in if of > 0 { self?.status = "Bringing back your saved songs · \(done) of \(of)" } })
+            if of == 0 { if !auto { tell("All the songs in Files → Radiance Music are in Liked Songs.") } }
+            else if back == of { tell("\(back) songs from Files → Radiance Music are back in Liked Songs.") }
+            else if back > 0 || !auto { tell("\(back) of \(of) songs from Files → Radiance Music are back in Liked Songs. The rest come back by themselves later.") }
+            if back > 0 { fillGenres() }
+        }
+    }
+
+    @ObservationIgnored private var missing: Task<Void, Never>?
+
+    /** Liked songs not saved yet (liked offline, or on another device): saved now, one at a time. */
+    func saveMissing() {
+        guard missing == nil, online else { return }
+        missing = Task {
+            defer { missing = nil }
+            for t in library.liked where paths.file(t.file).map({ !FileManager.default.fileExists(atPath: $0.path) }) ?? true {
+                if !online { break }
+                await saveNow(t)
+            }
+        }
+    }
+
+    @ObservationIgnored private var sharpening: Task<Void, Never>?
+
+    /** Liked songs' covers kept small before (YouTube Music's 120 px): fetched again big, quietly, one at a time. */
+    func sharpenCovers() {
+        guard sharpening == nil, online else { return }
+        sharpening = Task {
+            defer { sharpening = nil }
+            for t in library.liked {
+                let f = Saver.coverFile(paths, t)
+                if FileManager.default.fileExists(atPath: f.path), Art.grows(t.art), Saver.small(f) { try? await Saver.cover(paths, t) }
+            }
+        }
+    }
+
+    @ObservationIgnored private var genres: Task<Void, Never>?
+
+    /** Liked songs' genres (and an album for one that came without), from Deezer, one at a time. */
+    func fillGenres() {
+        guard genres == nil, online else { return }
+        genres = Task {
+            defer { genres = nil }
+            while true {
+                let todo = library.liked.filter { $0.genres == nil }
+                if todo.isEmpty { break }
+                var answered = 0
+                for t in todo {
+                    try? await Task.sleep(for: .milliseconds(250))
+                    guard let found = await Genres.lookup(t) else { continue } // couldn't ask: later
+                    answered += 1
+                    var now = library.best(t)
+                    now.genres = found.genres
+                    if now.album.isEmpty, let a = found.album { now.album = a }
+                    library.update(now)
+                }
+                if answered == 0 { break } // nothing answered (offline): at the next start, or back online
             }
         }
     }

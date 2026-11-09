@@ -81,8 +81,11 @@ final class ServerCopyTests: XCTestCase {
         }
         let t = Track(source: .youtube, id: "v", title: "Audio (feat. Sia, Diplo & Labrinth)", artist: "LSD")
         XCTAssertTrue(Servers.same(song("LSD", "Audio (feat. Sia, Diplo & Labrinth)"), t))
-        XCTAssertTrue(Servers.same(song("lsd", "AUDIO (feat. Sia)"), t)) // bracketed extras and case aside
-        XCTAssertFalse(Servers.same(song("LSD, Sia & Diplo", "Audio"), t)) // another credit: not the same (as Android)
+        XCTAssertTrue(Servers.same(song("Lsd", "Audio (feat. Siá, Diplo & Labrinth)"), t)) // accents aside
+        XCTAssertTrue(Servers.same(song("lsd", "AUDIO (FEAT. SIA, DIPLO & LABRINTH)"), t)) // case and spaces aside
+        XCTAssertFalse(Servers.same(song("LSD", "Audio"), t)) // what's in brackets counts too (as Android)
+        XCTAssertFalse(Servers.same(song("Maki", "Dilaw (Acoustic)"), Track(source: .youtube, id: "d", title: "Dilaw", artist: "Maki")))
+        XCTAssertFalse(Servers.same(song("LSD, Sia & Diplo", "Audio (feat. Sia, Diplo & Labrinth)"), t)) // another credit
         XCTAssertFalse(Servers.same(song("Someone Else", "Audio"), t))
         XCTAssertFalse(Servers.same(song("LSD", "Genius"), t))
         XCTAssertTrue(Servers.playable("Maki - Dilaw.m4a"))

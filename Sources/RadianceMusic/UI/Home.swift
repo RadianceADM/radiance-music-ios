@@ -52,6 +52,8 @@ struct HomeScreen: View {
                     let newest = Array(liked.suffix(20).reversed())
                     SectionTitle("Liked songs").padding(.top, 6)
                     CardRow(songs: newest) { i in app.player.play(newest, i) }
+                    // as the computer app's Home: your albums, artists and genres (android#38); a card opens its songs
+                    ForEach(ShelfKind.allCases) { ShelfRow(kind: $0) }
                 }
             }
             .padding(.horizontal, 16)

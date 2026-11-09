@@ -53,7 +53,7 @@ final class PlayerHub {
         player.automaticallyWaitsToMinimizeStalling = true
         setUpSession()
         setUpRemote()
-        ticker = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main) { [weak self] t in
+        ticker = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.2, preferredTimescale: 600), queue: .main) { [weak self] t in
             MainActor.assumeIsolated { self?.tick(t.seconds) }
         }
         statusWatch = player.observe(\.timeControlStatus, options: [.new]) { [weak self] p, _ in

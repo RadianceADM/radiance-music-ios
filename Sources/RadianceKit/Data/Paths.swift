@@ -15,7 +15,7 @@ public struct Paths: Sendable {
     public init(support: URL, documents: URL) {
         self.support = support
         self.documents = documents
-        for d in [support, songs, covers, lyrics] { try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true) }
+        for d in [support, songs, covers, lyrics, imports] { try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true) }
     }
 
     /** The app's folders on this iPhone. */

@@ -230,10 +230,12 @@ extension Servers {
     }
 
     /**
-     * [song] on a server is [t]: the same plain artist and plain title (accents, case, spaces and bracketed extras
-     * aside), exactly as Android matches it (owner, 2026-11-09, for every app: the server's copy first).
+     * [song] on a server is [t], as Android matches it (owner, 2026-11-09, for every app: the server's copy first): the
+     * same plain artist, and the same title letter by letter with what's in brackets too (accents, case and spaces
+     * aside), so "Dilaw (Acoustic)" isn't "Dilaw".
      */
     public nonisolated static func same(_ song: ServerSong, _ t: Track) -> Bool {
-        !plain(t.title).isEmpty && plain(song.title) == plain(t.title) && plain(song.artist) == plain(t.artist)
+        let title = { (s: String) in fold(s).lowercased().lettersAndDigits }
+        return !title(t.title).isEmpty && title(song.title) == title(t.title) && plain(song.artist) == plain(t.artist)
     }
 }
