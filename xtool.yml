@@ -1,0 +1,6 @@
+version: 1
+# the same id as the Android app (a free Apple ID may get its team id added to it by xtool)
+bundleID: io.github.radianceadm.music
+product: RadianceMusic
+infoPath: Resources/Info.plist
+iconPath: Resources/AppIcon.png
