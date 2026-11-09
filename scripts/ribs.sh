@@ -13,7 +13,7 @@ what=${1:-test}
 quiet() { grep -v -e '^---' -e 'Radiance Innovation' -e AUTHORIZED -e 'Personal data' -e 'Questions:' || true; }
 
 sync() {
-    rsync -a --delete --exclude .build --exclude build --exclude .git --exclude '*.ipa' ./ "ribs:$SRC/" 2>&1 | quiet
+    rsync -a --delete --exclude .build --exclude /build --exclude /xtool --exclude /.bsp --exclude .git --exclude '*.ipa' ./ "ribs:$SRC/" 2>&1 | quiet
     ssh ribs "chown -R radmin: $SRC" 2>&1 | quiet
 }
 
@@ -31,10 +31,11 @@ build|install)
     scp -q "ribs:$ipa" build/RadianceMusic.ipa 2>&1 | quiet
     ls -la build/RadianceMusic.ipa
     if [ "$what" = install ]; then
-        # ribs02's xtool talks to the iPhone through this laptop's usbmuxd (the phone on this USB)
-        ssh ribs "rm -f /srv/build/ios/usbmuxd.sock" 2>&1 | quiet
-        ssh -o StreamLocalBindUnlink=yes -o ExitOnForwardFailure=yes -R /srv/build/ios/usbmuxd.sock:/var/run/usbmuxd ribs \
-            "chown radmin: /srv/build/ios/usbmuxd.sock; cd $SRC && sudo -u radmin -H env USBMUXD_SOCKET_ADDRESS=UNIX:/srv/build/ios/usbmuxd.sock bash -c '. /srv/build/ios/env.sh; cd $SRC; xtool dev run --usb 2>&1'" 2>&1 | quiet
+        # ribs02's xtool talks to the iPhone through this laptop's usbmuxd (the phone on this USB), over a socket in
+        # ribs02's /tmp that lasts only while this runs (SELinux lets sshd make one there, not in /srv/build or a port)
+        sock=/tmp/rm-usbmuxd-$$.sock
+        ssh -o ExitOnForwardFailure=yes -R "$sock:/var/run/usbmuxd" ribs \
+            "chown radmin: $sock && cd $SRC && sudo -u radmin -H env USBMUXD_SOCKET_ADDRESS=UNIX:$sock bash -c '. /srv/build/ios/env.sh; cd $SRC; xtool dev run --usb 2>&1'; rm -f $sock" 2>&1 | quiet
     fi
     ;;
 clean)

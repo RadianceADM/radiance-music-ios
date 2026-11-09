@@ -4,3 +4,4 @@ bundleID: io.github.radianceadm.music
 product: RadianceMusic
 infoPath: Resources/Info.plist
 iconPath: Resources/AppIcon.png
+skipLSP: true
