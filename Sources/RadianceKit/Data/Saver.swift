@@ -1,8 +1,8 @@
 import Foundation
 
 /**
- * Like it, save it (Android's data/Saver.kt): a liked song goes into Documents/Radiance Music (AAC .m4a from YouTube,
- * FLAC from the Internet Archive), its cover and its lyrics into the app's own folders. Never its music video.
+ * Like it, save it (Android's data/Saver.kt): a liked song goes into Documents/Radiance Music (FLAC from the Internet
+ * Archive, a server's song as it is there), its cover and its lyrics into the app's own folders. Never its music video.
  */
 public enum Saver {
     /** The name a saved song's file gets ("Artist - Title"; Found reads it back). */
@@ -44,7 +44,6 @@ public enum Saver {
         if out.file == nil || p.file(out.file).map({ !FileManager.default.fileExists(atPath: $0.path) }) == true {
             let f = try await saveSong(p, t, progress: progress)
             out.file = p.name(of: f)
-            if t.source == .youtube { out.format = "AAC" }
             await songSaved(out)
         }
         try? await cover(p, out)
@@ -65,11 +64,8 @@ public enum Saver {
     static func saveSong(_ p: Paths, _ t: Track, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
         switch t.source {
         case .youtube:
-            // the AAC sound (the iPhone plays it, Files and other apps open it): a .m4a as YouTube has it
-            let s = try await YouTube.audio(t.id)
-            let f = place(p, name(t), "m4a")
-            try await Http.download(s.url, to: f, size: s.size, headers: s.headers, progress: progress)
-            return f
+            // a YouTube song is saved from your server's copy of it (radiance-music#73), not from YouTube
+            throw Plain("Saving YouTube songs comes through your Radiance Music Server. Join one in Settings → Servers.")
         case .archive:
             let f = place(p, name(t), "flac")
             try await Http.download(t.id, to: f, progress: progress)

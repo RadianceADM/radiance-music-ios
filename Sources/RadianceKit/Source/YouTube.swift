@@ -1,10 +1,9 @@
 import Foundation
 
 /**
- * YouTube Music, the fallback when the Internet Archive doesn't have a song (Android's source/YouTube.kt). Android
- * finds the sound through NewPipe; an iPhone app can't run that, so this asks YouTube's own apps' API (innertube)
- * directly: search and "Up next" as the YouTube Music website does, and the sound as YouTube's iPhone app does, whose
- * answer has plain AAC (.m4a) addresses that the iPhone's player opens as they are (it can't play WebM/Opus).
+ * YouTube Music, the fallback when the Internet Archive doesn't have a song (Android's source/YouTube.kt): search,
+ * suggestions, "Up next" and lyrics, asked as the YouTube Music website asks them. Its songs' sound comes from your
+ * Radiance Music Server (radiance-music#73), never from YouTube to the iPhone.
  */
 public enum YouTube {
     /** The website's client (search, suggestions, Up next, lyrics). */
@@ -82,99 +81,8 @@ public enum YouTube {
     }
 
     // MARK: - the sound
-
-    /** A stream to play or save: its address, file ending and size (if known). */
-    public struct Stream: Sendable, Equatable {
-        public let url: String
-        public let mime: String
-        public let ext: String
-        public let size: Int64?
-        public let kbps: Int
-        /** The headers to fetch it with (the client it came from). */
-        public let headers: [String: String]
-    }
-
-    /** One of YouTube's own apps, as the player asks it. */
-    struct Client: Sendable {
-        let name: String
-        let id: Int
-        let version: String
-        let userAgent: String
-        let extra: [String: JSON]
-    }
-
-    /** Tried in turn: the iPhone app's answer has plain addresses; the headset app's is the spare. */
-    static let clients: [Client] = [
-        Client(name: "IOS", id: 5, version: "20.10.4",
-               userAgent: "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
-               extra: ["deviceMake": "Apple", "deviceModel": "iPhone16,2", "osName": "iPhone", "osVersion": "18.3.2.22D82"]),
-        Client(name: "ANDROID_VR", id: 28, version: "1.65.10",
-               userAgent: "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
-               extra: ["deviceMake": "Oculus", "deviceModel": "Quest 3", "androidSdkVersion": 32, "osName": "Android", "osVersion": "12L"]),
-    ]
-
-    private static let cache = StreamCache()
-
-    /**
-     * The song's AAC sound (the best the iPhone plays: 128 kbps, sometimes 256). Kept for two hours (YouTube's
-     * addresses last about six).
-     *
-     * NOT SETTLED (2026-11-09): this first try gets only the first ~1 MB of a song (YouTube wants a token from its own
-     * apps for the rest). How the iPhone gets YouTube's sound is the owner's call; nothing plays from here until then.
-     */
-    public static func audio(_ id: String) async throws -> Stream {
-        if let s = await cache.get(id) { return s }
-        var refusal: Error?
-        for c in clients {
-            do {
-                let s = try await audio(id, c)
-                await cache.put(id, s)
-                return s
-            } catch let e as YouTubeRefused {
-                refusal = refusal ?? e
-            } catch {
-                if Errors.network(error) { throw error }
-                refusal = refusal ?? error
-            }
-        }
-        throw refusal ?? Plain(Errors.youtube)
-    }
-
-    static func audio(_ id: String, _ c: Client) async throws -> Stream {
-        var client: [String: JSON] = ["clientName": .string(c.name), "clientVersion": .string(c.version), "hl": "en", "gl": "US"]
-        c.extra.forEach { client[$0] = $1 }
-        let body: JSON = ["context": ["client": .object(client)], "videoId": .string(id), "contentCheckOk": true, "racyCheckOk": true]
-        let r = try await Http.postJson("https://youtubei.googleapis.com/youtubei/v1/player?prettyPrint=false", body, headers: [
-            "User-Agent": c.userAgent, "X-YouTube-Client-Name": "\(c.id)", "X-YouTube-Client-Version": c.version,
-        ])
-        return try stream(r, userAgent: c.userAgent)
-    }
-
-    /** The best AAC stream in a player answer, or why there's none, in plain words. */
-    static func stream(_ r: JSON, userAgent: String) throws -> Stream {
-        let status = r["playabilityStatus"]?["status"]?.string ?? ""
-        if status != "OK" {
-            let reason = (r["playabilityStatus"]?["reason"]?.string ?? "").lowercased()
-            let words: String
-            switch true {
-            // "Sign in to confirm your age" before "Sign in to confirm you're not a bot"
-            case reason.contains("your age"), reason.contains("age-restricted"), reason.contains("inappropriate"): words = Errors.adults
-            case reason.contains("bot"), reason.contains("sign in to confirm"): words = Errors.robot
-            case reason.contains("country"), reason.contains("region"): words = Errors.country
-            case status == "UNPLAYABLE", status == "ERROR": words = Errors.unavailable
-            default: words = Errors.youtube
-            }
-            throw YouTubeRefused(words: words, status: "\(status): \(reason)")
-        }
-        let formats = (r["streamingData"]?["adaptiveFormats"]?.array ?? []).filter {
-            ($0["mimeType"]?.string ?? "").hasPrefix("audio/mp4") && ($0["url"]?.string ?? "").hasPrefix("https://")
-        }
-        guard let best = formats.max(by: { ($0["bitrate"]?.int ?? 0) < ($1["bitrate"]?.int ?? 0) }) else {
-            throw YouTubeRefused(words: "YouTube didn't give this song's sound.", status: "no AAC stream")
-        }
-        return Stream(url: best["url"]!.string!, mime: "audio/mp4", ext: "m4a", size: best["contentLength"]?.int64,
-                      kbps: (best["averageBitrate"]?.int ?? best["bitrate"]?.int ?? 0) / 1000, headers: ["User-Agent": userAgent])
-    }
+    // The iPhone never fetches a YouTube song's sound itself: its Radiance Music Server gets it (owner, 2026-11-09:
+    // "if not yet exists in server download from youtube"; radiance-music#73), and the iPhone plays the server's copy.
 
     // MARK: - lyrics
 
@@ -218,20 +126,5 @@ public enum YouTube {
         // a bigger cover than the list's thumbnail
         art = art.replacingOccurrences(of: #"=w\d+-h\d+"#, with: "=w544-h544", options: .regularExpression)
         return Track(source: .youtube, id: vid, title: title, artist: artist, album: album, seconds: seconds, art: art, format: "AAC")
-    }
-}
-
-/** Streams found lately, by video id, for two hours. */
-actor StreamCache {
-    private var kept: [String: (YouTube.Stream, Date)] = [:]
-
-    func get(_ id: String) -> YouTube.Stream? {
-        guard let (s, at) = kept[id], Date().timeIntervalSince(at) < 2 * 3600 else { return nil }
-        return s
-    }
-
-    func put(_ id: String, _ s: YouTube.Stream) {
-        kept[id] = (s, Date())
-        if kept.count > 200 { kept = kept.filter { Date().timeIntervalSince($0.value.1) < 2 * 3600 } }
     }
 }
