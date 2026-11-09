@@ -39,4 +39,6 @@ again (`scripts/ribs.sh install` with the iPhone plugged in).
 
 ## License
 
-GPL-3.0, like the Android app.
+Closed source (owner, 2026-11-10: every Radiance Music app but the Radiance Music Server). © Radiance Innovation
+Centers in the Philippines. All rights reserved. Third-party parts keep their own licenses: ONNX Runtime (MIT),
+Spleeter (MIT) and its sherpa-onnx export (Apache 2.0).

@@ -54,7 +54,9 @@ struct SettingsScreen: View {
                     if let until = About.expires {
                         LabeledContent("This copy opens until", value: until.formatted(date: .abbreviated, time: .shortened))
                     }
-                    Text("Radiance Music is free software (GPL-3.0). Lossless songs from the Internet Archive, lyrics from LRCLIB, genres from Deezer.")
+                    Text("© Radiance Innovation Centers in the Philippines. All rights reserved.")
+                        .font(.system(size: 13)).foregroundStyle(Brand.dim)
+                    Text("Lossless songs from the Internet Archive, lyrics from LRCLIB, genres from Deezer. Splitting: Spleeter (Deezer, MIT License), its models exported by sherpa-onnx (Apache License 2.0), run on ONNX Runtime (Microsoft, MIT License).")
                         .font(.system(size: 13)).foregroundStyle(Brand.dim)
                 }
             }
