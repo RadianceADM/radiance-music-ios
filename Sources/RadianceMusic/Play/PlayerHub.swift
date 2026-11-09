@@ -322,27 +322,28 @@ final class PlayerHub {
             guard let u = URL(string: app.servers.sign(t.id)) else { throw Plain("This song's address is broken.") }
             return u
         case .youtube:
+            // a joined server's copy first (owner, 2026-11-09), else the iPhone gets it from YouTube itself
             if let have = serverCopy[t.key], let u = URL(string: app.servers.sign(have)) { return u }
-            guard let server = app.youTubeServer else {
-                throw Plain("YouTube songs play through a Radiance Music Server. Join one in Settings → Servers.")
+            if let (_, song) = await app.servers.copy(of: t) {
+                serverCopy[t.key] = song.url
+                if let u = URL(string: app.servers.sign(song.url)) { return u }
             }
-            note = "Getting it from \(server.name)…"
-            let song = try await server.rms.fetched(t) { [weak self] words, _ in
-                Task { @MainActor in if self?.current?.key == t.key, !words.isEmpty { self?.note = words } }
-            }
-            serverCopy[t.key] = song.url
-            guard let u = URL(string: app.servers.sign(song.url)) else { throw Plain("The server's copy has a broken address.") }
+            let s = try await YouTube.audio(t.id)
+            guard let u = URL(string: s.url) else { throw Plain("YouTube gave a broken address for this song.") }
             return u
         }
     }
 
-    /** The next song from YouTube: your server is asked for it now, so it's there when it's its turn. */
+    /** The next song from YouTube: looked up now (a server's copy, else YouTube's), so it starts at once when it's its turn. */
     private func prepareNext() {
         guard let n = nextIndex(auto: false), queue.indices.contains(n) else { return }
         let t = queue[n]
-        guard t.source == .youtube, serverCopy[t.key] == nil, app.paths.file(t.file).map({ !FileManager.default.fileExists(atPath: $0.path) }) ?? true,
-              let server = app.youTubeServer else { return }
-        Task { _ = try? await server.rms.fetch(t) }
+        guard t.source == .youtube, serverCopy[t.key] == nil,
+              app.paths.file(t.file).map({ !FileManager.default.fileExists(atPath: $0.path) }) ?? true else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            if let (_, song) = await self.app.servers.copy(of: t) { self.serverCopy[t.key] = song.url } else { _ = try? await YouTube.audio(t.id) }
+        }
     }
 
     private func relatedTo(_ t: Track) async -> [Track] {

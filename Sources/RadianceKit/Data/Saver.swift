@@ -64,8 +64,11 @@ public enum Saver {
     static func saveSong(_ p: Paths, _ t: Track, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
         switch t.source {
         case .youtube:
-            // a YouTube song is saved from your server's copy of it (radiance-music#73), not from YouTube
-            throw Plain("Saving YouTube songs comes through your Radiance Music Server. Join one in Settings → Servers.")
+            // the AAC sound (the iPhone plays it, Files and other apps open it): a .m4a as YouTube has it
+            let s = try await YouTube.audio(t.id)
+            let f = place(p, name(t), s.ext)
+            try await Http.download(s.url, to: f, size: s.size, headers: s.headers, progress: progress)
+            return f
         case .archive:
             let f = place(p, name(t), "flac")
             try await Http.download(t.id, to: f, progress: progress)

@@ -56,14 +56,6 @@ final class AppModel {
         Task { await servers.refresh(online: online) }
     }
 
-    /** The server that gets YouTube songs for this iPhone: the first joined one that lets you add songs and still knows you. */
-    var youTubeServer: Server? {
-        servers.list.first { s in
-            if case .removed = servers.health[s.base] ?? .unknown { return false }
-            return s.can.add
-        }
-    }
-
     func tell(_ words: String, action: (String, () -> Void)? = nil) {
         let n = Notice(words: words, actionLabel: action?.0, action: action?.1)
         notice = n
@@ -91,7 +83,7 @@ final class AppModel {
 
     /**
      * A liked song saved on the iPhone with its cover and lyrics (Documents/Radiance Music, seen in Files). A YouTube
-     * song is saved from your server's copy (radiance-music#73).
+     * song from a joined server's copy when it has one, else from YouTube.
      */
     func save(_ t: Track) {
         guard saving[t.key] == nil else { return }
@@ -100,13 +92,7 @@ final class AppModel {
             defer { saving[t.key] = nil }
             do {
                 var song = t
-                if t.source == .youtube && t.file == nil {
-                    guard let server = youTubeServer else {
-                        try? await Saver.cover(paths, t)
-                        _ = await Saver.lyrics(paths, t)
-                        return tell("Liked “\(t.title)”. To save it on this iPhone, join a Radiance Music Server in Settings → Servers.")
-                    }
-                    let copy = try await server.rms.fetched(t)
+                if t.source == .youtube && t.file == nil, let (_, copy) = await servers.copy(of: t) {
                     let ext = (copy.file.split(separator: ".").last.map(String.init) ?? "m4a").lowercased()
                     let f = Saver.place(paths, Saver.name(t), ext)
                     let key = t.key

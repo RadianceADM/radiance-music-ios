@@ -119,6 +119,35 @@ final class YouTubeTests: XCTestCase {
     }
 }
 
+/** The player's answer, read (no network): the best AAC stream, and YouTube's "no" in plain words. */
+final class StreamTests: XCTestCase {
+    func testThePlayersBestAACStream() throws {
+        let ok = JSON.parse("""
+        {"playabilityStatus":{"status":"OK"},"streamingData":{"adaptiveFormats":[
+          {"itag":251,"mimeType":"audio/webm; codecs=\\"opus\\"","bitrate":136544,"url":"https://rr1.googlevideo.com/251"},
+          {"itag":139,"mimeType":"audio/mp4; codecs=\\"mp4a.40.5\\"","bitrate":50152,"url":"https://rr1.googlevideo.com/139"},
+          {"itag":140,"mimeType":"audio/mp4; codecs=\\"mp4a.40.2\\"","bitrate":130677,"averageBitrate":129500,"contentLength":"3449447","url":"https://rr1.googlevideo.com/140"},
+          {"itag":137,"mimeType":"video/mp4","bitrate":4000000,"url":"https://rr1.googlevideo.com/137"}]}}
+        """)!
+        let s = try YouTube.stream(ok, userAgent: "UA")
+        XCTAssertEqual(s.url, "https://rr1.googlevideo.com/140") // AAC, the best of it (never Opus: the iPhone can't play WebM)
+        XCTAssertEqual(s.ext, "m4a")
+        XCTAssertEqual(s.size, 3449447)
+        XCTAssertEqual(s.kbps, 129)
+    }
+
+    func testWhyYouTubeSaidNoInPlainWords() {
+        func why(_ status: String, _ reason: String) -> String {
+            do { _ = try YouTube.stream(JSON.parse(#"{"playabilityStatus":{"status":"\#(status)","reason":"\#(reason)"}}"#)!, userAgent: ""); return "" }
+            catch { return Errors.say(error) }
+        }
+        XCTAssertEqual(why("LOGIN_REQUIRED", "Sign in to confirm you’re not a bot"), Errors.robot)
+        XCTAssertEqual(why("UNPLAYABLE", "The uploader has not made this video available in your country"), Errors.country)
+        XCTAssertEqual(why("ERROR", "Video unavailable"), Errors.unavailable)
+        XCTAssertEqual(why("LOGIN_REQUIRED", "This video may be inappropriate for some users. Sign in to confirm your age"), Errors.adults)
+    }
+}
+
 final class LyricsTests: XCTestCase {
     func testTimedLinesEachEndWhereTheNextStarts() {
         let lines = LyricsFinder.parseLrc("[ar: Maki]\n[00:12.50]First\n[00:15.00][01:00.00]Chorus\n[00:20.25]\nnot timed")

@@ -29,6 +29,7 @@ public enum Errors {
         guard let e else { return something }
         if !online && network(e) { return offline }
         if let p = e as? Plain { return p.words }
+        if let y = e as? YouTubeRefused { return y.words }
         if e is CancellationError { return stopped }
         if let u = e as? URLError { return url(u) }
         let ns = e as NSError
@@ -60,6 +61,13 @@ public enum Errors {
         default: return something
         }
     }
+}
+
+/** YouTube said no to a song, with its reason in plain words. */
+public struct YouTubeRefused: Error, CustomStringConvertible {
+    public let words: String
+    public let status: String
+    public var description: String { "\(words) (\(status))" }
 }
 
 /** An NSURLErrorDomain code as a URLError's (Linux's Foundation can say "no such code"). */

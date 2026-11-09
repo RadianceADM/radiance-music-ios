@@ -72,3 +72,20 @@ final class ServerTests: XCTestCase {
         XCTAssertEqual(servers.sign("https://music.example.com/files/a.opus"), "https://music.example.com/files/a.opus") // not joined: as it is
     }
 }
+
+final class ServerCopyTests: XCTestCase {
+    func testTheServersCopyIsTheSameSong() {
+        let rms = Rms("https://music.example.com")
+        func song(_ artist: String, _ title: String) -> ServerSong {
+            ServerSong.from(JSON.parse(#"{"id":1,"artist":"\#(artist)","title":"\#(title)","file":"x.m4a"}"#)!, rms.id)!
+        }
+        let t = Track(source: .youtube, id: "v", title: "Audio (feat. Sia, Diplo & Labrinth)", artist: "LSD")
+        XCTAssertTrue(Servers.same(song("LSD", "Audio (feat. Sia, Diplo & Labrinth)"), t))
+        XCTAssertTrue(Servers.same(song("lsd", "AUDIO (feat. Sia)"), t)) // bracketed extras and case aside
+        XCTAssertFalse(Servers.same(song("LSD, Sia & Diplo", "Audio"), t)) // another credit: not the same (as Android)
+        XCTAssertFalse(Servers.same(song("Someone Else", "Audio"), t))
+        XCTAssertFalse(Servers.same(song("LSD", "Genius"), t))
+        XCTAssertTrue(Servers.playable("Maki - Dilaw.m4a"))
+        XCTAssertFalse(Servers.playable("Maki - Dilaw.opus")) // the iPhone's player can't open Opus
+    }
+}

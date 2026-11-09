@@ -35,7 +35,7 @@ struct SettingsScreen: View {
                 } header: {
                     Text("Servers")
                 } footer: {
-                    Text("A Radiance Music Server shares its songs with you. YouTube songs play and save through the first server you join: it gets a song it doesn't have yet.")
+                    Text("A Radiance Music Server shares its songs with you. A YouTube song plays from a server you joined when it has it, else from YouTube.")
                 }
                 Section("Look") {
                     Picker("Colours", selection: $app.stone) {

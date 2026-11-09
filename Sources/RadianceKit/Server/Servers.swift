@@ -205,3 +205,35 @@ public final class Servers {
         }
     }
 }
+
+// MARK: - the server's copy first
+
+extension Servers {
+    /**
+     * A joined server's copy of [t] (owner, 2026-11-09: the server's copy first, else the song from where it's from):
+     * the same title and artist there (accents, case and bracketed extras aside). Nil: no joined server has it, or
+     * none answered.
+     */
+    public func copy(of t: Track) async -> (Server, ServerSong)? {
+        guard t.source != .server else { return nil }
+        for s in list {
+            if case .removed = health[s.base] ?? .unknown { continue }
+            guard let page = try? await s.rms.page("\(t.artist) \(t.title)", limit: 10) else { continue }
+            if let song = page.songs.first(where: { Servers.same($0, t) && Servers.playable($0.file) }) { return (s, song) }
+        }
+        return nil
+    }
+
+    /** A file the iPhone's player opens (not Opus in Ogg or WebM, which most of a computer's songs are). */
+    public nonisolated static func playable(_ file: String) -> Bool {
+        ["m4a", "mp4", "aac", "flac", "mp3", "wav", "caf", "aif", "aiff", "alac"].contains((file.split(separator: ".").last.map(String.init) ?? "").lowercased())
+    }
+
+    /**
+     * [song] on a server is [t]: the same plain artist and plain title (accents, case, spaces and bracketed extras
+     * aside), exactly as Android matches it (owner, 2026-11-09, for every app: the server's copy first).
+     */
+    public nonisolated static func same(_ song: ServerSong, _ t: Track) -> Bool {
+        !plain(t.title).isEmpty && plain(song.title) == plain(t.title) && plain(song.artist) == plain(t.artist)
+    }
+}
