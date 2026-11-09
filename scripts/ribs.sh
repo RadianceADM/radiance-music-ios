@@ -35,7 +35,12 @@ build|install)
         # ribs02's /tmp that lasts only while this runs (SELinux lets sshd make one there, not in /srv/build or a port)
         sock=/tmp/rm-usbmuxd-$$.sock
         ssh -o ExitOnForwardFailure=yes -R "$sock:/var/run/usbmuxd" ribs \
-            "chown radmin: $sock && cd $SRC && sudo -u radmin -H env USBMUXD_SOCKET_ADDRESS=UNIX:$sock bash -c '. /srv/build/ios/env.sh; cd $SRC; xtool dev run --usb -c ${CONFIG:-release} 2>&1'; rm -f $sock" 2>&1 | quiet
+            "chown radmin: $sock && cd $SRC && sudo -u radmin -H env USBMUXD_SOCKET_ADDRESS=UNIX:$sock bash -c '. /srv/build/ios/env.sh; cd $SRC
+              nice -n 19 xtool dev build -c ${CONFIG:-release} 2>&1 | tail -3
+              # ONNX Runtime is built into the app itself: the static framework xtool copies beside it would only break signing
+              rm -rf xtool/RadianceMusic.app/Frameworks/onnxruntime.framework
+              rmdir xtool/RadianceMusic.app/Frameworks 2>/dev/null
+              xtool install --usb xtool/RadianceMusic.app 2>&1'; rm -f $sock" 2>&1 | quiet
     fi
     ;;
 clean)

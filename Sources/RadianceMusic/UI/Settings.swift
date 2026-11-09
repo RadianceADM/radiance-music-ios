@@ -8,6 +8,7 @@ struct SettingsScreen: View {
     @State private var invite = ""
     @State private var joining = false
     @State private var joinProblem: String?
+    @State private var sharing = false
 
     var body: some View {
         @Bindable var app = app
@@ -37,6 +38,10 @@ struct SettingsScreen: View {
                 } footer: {
                     Text("A Radiance Music Server shares its songs with you. A YouTube song plays from a server you joined when it has it, else from YouTube.")
                 }
+                Section {
+                    Button { sharing = true } label: { Label("Share songs by QR", systemImage: "qrcode") }
+                    Button { app.findSaved(auto: false) } label: { Label("Bring back songs in Files → Radiance Music", systemImage: "arrow.clockwise") }
+                } header: { Text("Your songs") }
                 Section("Look") {
                     Picker("Colours", selection: $app.stone) {
                         Text("True Black").tag(false)
@@ -58,6 +63,7 @@ struct SettingsScreen: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+            .sheet(isPresented: $sharing) { ShareScreen() }
         }
     }
 
