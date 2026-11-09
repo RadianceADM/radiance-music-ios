@@ -34,3 +34,26 @@ final class WireTests: XCTestCase {
         XCTAssertEqual(Wire.newKey().count, 32)
     }
 }
+
+/** Picking lyric lines for a story, as Android's ShareSheet tests them. */
+final class LyricPickTests: XCTestCase {
+    func testTapsPickLinesNextToEachOther() {
+        let lengths = [20, 30, 40, 50, 60]
+        var p: [Int] = []
+        XCTAssertNil(LyricPick.tap(&p, 1, lengths)); XCTAssertEqual(p.sorted(), [1])
+        XCTAssertNil(LyricPick.tap(&p, 2, lengths)); XCTAssertEqual(p.sorted(), [1, 2])
+        XCTAssertNil(LyricPick.tap(&p, 0, lengths)); XCTAssertEqual(p.sorted(), [0, 1, 2])
+        XCTAssertNil(LyricPick.tap(&p, 3, lengths)); XCTAssertEqual(p.sorted(), [0, 1, 2, 3]) // 140 characters
+        XCTAssertEqual(LyricPick.tap(&p, 4, lengths), "150 characters at most")
+        XCTAssertNil(LyricPick.tap(&p, 0, lengths)); XCTAssertEqual(p.sorted(), [1, 2, 3]) // an end comes off
+        XCTAssertNil(LyricPick.tap(&p, 2, lengths)); XCTAssertEqual(p, [2]) // the middle: just it
+        XCTAssertNil(LyricPick.tap(&p, 4, lengths)); XCTAssertEqual(p, [4]) // away: starts again
+        XCTAssertEqual(LyricPick.tap(&p, 0, [200, 1, 1, 1, 1]), "That line is longer than 150 characters")
+    }
+
+    func testHoldAndSlide() {
+        let lengths = [40, 40, 40, 40, 40]
+        XCTAssertTrue(LyricPick.stretch(1, 3, lengths) == ([1, 2, 3], false))
+        XCTAssertTrue(LyricPick.stretch(3, 0, lengths) == ([1, 2, 3], true)) // the 4th line would pass 150
+    }
+}

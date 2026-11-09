@@ -172,11 +172,17 @@ struct NowPlayingScreen: View {
                 Menu {
                     SongMenu(track: t)
                     Button { showMixer = true } label: { Label("Mixer", systemImage: "slider.vertical.3") }
-                    Button { sharing = (t, nil) } label: { Label("Share on a story", systemImage: "square.and.arrow.up") }
+                    Button { sharing = (t, nil) } label: { Label("Share", systemImage: "square.and.arrow.up") }
                 } label: {
                     Image(systemName: "ellipsis").font(.system(size: 18, weight: .semibold)).foregroundStyle(.white).frame(width: 40, height: 40)
                 }
                 .accessibilityLabel("More")
+                Spacer()
+                // share it: a story card with its cover or the lyrics you pick
+                Button { sharing = (t, nil) } label: {
+                    Image(systemName: "square.and.arrow.up").font(.system(size: 18, weight: .semibold)).foregroundStyle(.white).frame(width: 40, height: 40)
+                }
+                .accessibilityLabel("Share")
                 Spacer()
                 Button { showQueue = true } label: {
                     Image(systemName: "list.bullet").font(.system(size: 18, weight: .semibold)).foregroundStyle(.white).frame(width: 40, height: 40)
