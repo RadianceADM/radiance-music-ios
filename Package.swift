@@ -11,6 +11,7 @@ import PackageDescription
 let kitOnly = ProcessInfo.processInfo.environment["RADIANCE_KIT_ONLY"] == "1"
 
 var products: [Product] = []
+var dependencies: [Package.Dependency] = []
 var targets: [Target] = [
     .target(name: "RadianceKit", path: "Sources/RadianceKit"),
     .testTarget(
@@ -24,13 +25,19 @@ var targets: [Target] = [
 if !kitOnly {
     // an xtool project has exactly one library product: the app
     products.append(.library(name: "RadianceMusic", targets: ["RadianceMusic"]))
-    targets.append(.target(name: "RadianceMusic", dependencies: ["RadianceKit"], path: "Sources/RadianceMusic"))
+    // the splitter's models run on ONNX Runtime (as Android's): its iPhone build, from Microsoft's package
+    dependencies.append(.package(url: "https://github.com/microsoft/onnxruntime-swift-package-manager", exact: "1.24.2"))
+    targets.append(.target(name: "RadianceMusic", dependencies: [
+        "RadianceKit",
+        .product(name: "onnxruntime", package: "onnxruntime-swift-package-manager"),
+    ], path: "Sources/RadianceMusic"))
 }
 
 let package = Package(
     name: "RadianceMusic",
     platforms: [.iOS(.v17), .macOS(.v14)],
     products: products,
+    dependencies: dependencies,
     targets: targets,
     swiftLanguageModes: [.v5]
 )

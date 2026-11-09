@@ -23,6 +23,10 @@ final class AppModel {
     let covers: Covers
     @ObservationIgnored private var hub: PlayerHub?
     var player: PlayerHub { hub! }
+    @ObservationIgnored private var mix: Mixer?
+    var mixer: Mixer { mix! }
+    @ObservationIgnored private var splits: Splitter?
+    var splitter: Splitter { splits! }
     /** Songs being saved now (their keys) and how far, 0-1. */
     private(set) var saving: [String: Double] = [:]
     private(set) var notice: Notice?
@@ -48,6 +52,8 @@ final class AppModel {
         servers = Servers(dir: paths.support)
         covers = Covers(paths: paths)
         covers.servers = servers
+        mix = Mixer(app: self)
+        splits = Splitter(app: self)
         hub = PlayerHub(app: self)
         monitor.pathUpdateHandler = { [weak self] path in
             let up = path.status == .satisfied
@@ -164,6 +170,7 @@ final class AppModel {
         saveMissing()
         sharpenCovers()
         fillGenres()
+        sendPendingUploads()
     }
 
     /** Back online: what waited for the internet goes on. */
@@ -172,6 +179,7 @@ final class AppModel {
         saveMissing()
         sharpenCovers()
         fillGenres()
+        sendPendingUploads()
         Task { await servers.refresh(online: online) }
     }
 
@@ -258,6 +266,61 @@ final class AppModel {
                     library.update(now)
                 }
                 if answered == 0 { break } // nothing answered (offline): at the next start, or back online
+            }
+        }
+    }
+
+    // MARK: - a split here goes up to your server (owner, 2026-11-09, rule 2 for every app)
+
+    /** Songs split here whose parts still have to go up (the server was away): their keys. */
+    @ObservationIgnored private lazy var pendingFile = paths.support.appendingPathComponent("pending-uploads.json")
+
+    private var pendingUploads: Set<String> {
+        get { Set(((try? Data(contentsOf: pendingFile)).flatMap { JSON.parse($0)?.array } ?? []).compactMap { $0.string }) }
+        set { try? JSON.array(newValue.sorted().map { .string($0) }).data().write(to: pendingFile, options: .atomic) }
+    }
+
+    /**
+     * [t], split here, goes up to the server this iPhone joined: the song (its file [song]), its cover and lyrics,
+     * then its two parts. Away or offline: it waits, and goes up when the server answers again.
+     */
+    func uploadSplit(_ t: Track, song: URL) async {
+        guard let server = servers.list.first(where: { s in
+            if case .removed = servers.health[s.base] ?? .unknown { return false }
+            return s.can.add
+        }) else { return }
+        let parts = Splits.parts(paths, t.key)
+        guard parts["vocals"] != nil, parts["music"] != nil else { return }
+        do {
+            let rms = server.rms
+            let cover = Saver.keptCover(paths, t).map { Upload(name: "cover.jpg", file: $0, mime: "image/jpeg") }
+            let lyricsFile = Saver.lyricsFile(paths, t)
+            let lyrics = FileManager.default.fileExists(atPath: lyricsFile.path) ? Upload(name: "lyrics.lrc", file: lyricsFile, mime: "text/plain") : nil
+            let name = Saver.name(t) + "." + (song.pathExtension.isEmpty ? "m4a" : song.pathExtension)
+            let up = try await rms.upload(song: Upload(name: name, file: song, mime: Upload.mime(name)), artist: t.artist, title: t.title,
+                                          seconds: t.seconds, cover: cover, lyrics: lyrics, partsComing: true)
+            guard let id = up.song?.id else { throw Plain("The server didn't say which song it kept.") }
+            let files = ["vocals", "music"].reduce(into: [String: Upload]()) { d, n in
+                if let f = parts[n] { d[n] = Upload(name: "\(Saver.name(t)).\(n).\(f.pathExtension)", file: f, mime: Upload.mime(f.lastPathComponent)) }
+            }
+            _ = try await rms.uploadParts(song: id, parts: files)
+            pendingUploads.remove(t.key)
+            print("radiance-split: “\(t.title)” and its parts are on \(server.name)")
+        } catch {
+            print("radiance-split: couldn't send “\(t.title)” to \(server.name): \(error)")
+            pendingUploads.insert(t.key)
+        }
+    }
+
+    /** Splits that waited for the server: sent now (the ones whose song is saved here). */
+    func sendPendingUploads() {
+        let keys = pendingUploads
+        guard !keys.isEmpty else { return }
+        Task {
+            for key in keys {
+                guard let t = library.liked.first(where: { $0.key == key }), let f = paths.file(t.file),
+                      FileManager.default.fileExists(atPath: f.path) else { continue }
+                await uploadSplit(t, song: f)
             }
         }
     }

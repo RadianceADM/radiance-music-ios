@@ -35,7 +35,7 @@ build|install)
         # ribs02's /tmp that lasts only while this runs (SELinux lets sshd make one there, not in /srv/build or a port)
         sock=/tmp/rm-usbmuxd-$$.sock
         ssh -o ExitOnForwardFailure=yes -R "$sock:/var/run/usbmuxd" ribs \
-            "chown radmin: $sock && cd $SRC && sudo -u radmin -H env USBMUXD_SOCKET_ADDRESS=UNIX:$sock bash -c '. /srv/build/ios/env.sh; cd $SRC; xtool dev run --usb 2>&1'; rm -f $sock" 2>&1 | quiet
+            "chown radmin: $sock && cd $SRC && sudo -u radmin -H env USBMUXD_SOCKET_ADDRESS=UNIX:$sock bash -c '. /srv/build/ios/env.sh; cd $SRC; xtool dev run --usb -c ${CONFIG:-release} 2>&1'; rm -f $sock" 2>&1 | quiet
     fi
     ;;
 clean)

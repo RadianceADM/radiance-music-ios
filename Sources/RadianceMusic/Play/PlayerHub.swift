@@ -137,8 +137,18 @@ final class PlayerHub {
         resume()
     }
 
+    /** The song's own sound (the Mixer turns it down while it plays the parts). */
+    func setVolume(_ v: Float) { player.volume = min(max(v, 0), 1) }
+
+    /** Where the player is right now (not the last tick's). */
+    var exactPosition: Double {
+        let s = player.currentTime().seconds
+        return s.isFinite ? s : position
+    }
+
     func pause() {
         player.pause()
+        app.mixer.playingChanged(false, at: exactPosition)
         playing = false
         buffering = false
         updateNowPlaying()
@@ -178,6 +188,7 @@ final class PlayerHub {
     func seek(_ seconds: Double) {
         position = max(0, seconds)
         player.seek(to: CMTime(seconds: position, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        app.mixer.seeked(to: position)
         updateNowPlaying()
     }
 
@@ -283,6 +294,7 @@ final class PlayerHub {
         playing = play
         buffering = play
         if play { app.library.played(t) }
+        app.mixer.songChanged(t)
         updateNowPlaying()
         saveSession()
         loading = Task { [weak self] in
@@ -423,6 +435,7 @@ final class PlayerHub {
 
     private func stopped() {
         player.pause()
+        app.mixer.playingChanged(false, at: exactPosition)
         playing = false
         buffering = false
         updateNowPlaying()
@@ -437,6 +450,7 @@ final class PlayerHub {
         switch s {
         case .playing:
             print("radiance-play: playing “\(current?.title ?? "?")”")
+            app.mixer.playingChanged(true, at: exactPosition)
             buffering = false
             streak.played()
             problem = nil

@@ -6,7 +6,8 @@
 # there, never on the laptop) each goes into an MP4 (.m4a) as it is (CONV=copy, no re-encoding), or into AAC
 # (CONV=aac, 256 kbps) if the iPhone won't play that. Then they go
 # over USB into the app's Documents (Files → Radiance Music) and Documents/Library, library.json last.
-# The split parts come with the Mixer (stage 4). Scratch: ribs02 /srv/build/src/rm-ios-import and
+# The split parts (Vorbis, which the iPhone can't open either) become AAC (.m4a, 160 kbps) for the Mixer: the four
+# (and Piano, Guitar), or the two halves when that's all a song has. PARTS=0 leaves them out. Scratch: ribs02 /srv/build/src/rm-ios-import and
 # ~/.cache/rm-ios-import here, both deleted at the end.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -20,9 +21,9 @@ quiet() { grep -v -e '^---' -e 'Radiance Innovation' -e AUTHORIZED -e 'Personal 
 
 rm -rf "$HERE"; mkdir -p "$HERE/in" "$HERE/out"
 # the iPhone's library.json (songs as .caf, no parts yet) and the files it needs
-python3 - "$LIB" "${1:-0}" "$HERE" <<'PY'
+python3 - "$LIB" "${1:-0}" "$HERE" "${PARTS:-1}" <<'PY'
 import json, os, sys
-lib, most, here = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+lib, most, here, withparts = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4] == "1"
 songs = json.load(open(lib))["songs"]
 if most > 0: songs = songs[:most]
 need, out = [], []
@@ -32,7 +33,14 @@ for e in songs:
     need.append(name)
     e = dict(e)
     if ext.lower() == ".opus": e["song"] = base + ".m4a"
-    e.pop("parts", None)  # with the Mixer (stage 4)
+    parts = e.pop("parts", None) or {}
+    four = all(k in parts for k in ("drums", "bass", "other", "vocals"))
+    keep = [k for k in parts if (k in ("drums", "bass", "other", "vocals", "piano", "guitar")) if four] if four else [k for k in parts if k in ("music", "vocals")]
+    if withparts and keep:
+        e["parts"] = {}
+        for k in keep:
+            need.append(parts[k])
+            e["parts"][k] = os.path.splitext(parts[k])[0] + ".m4a"
     for k in ("cover", "lrc", "lyricsfile"):
         if e.get(k): need.append(e[k])
     out.append(e)
@@ -51,6 +59,7 @@ ssh ribs "chown -R radmin: $WORK && cd $WORK && sudo -u radmin bash -c '
       *.opus) if [ $CONV = aac ]; then codec=\"-c:a libfdk_aac -b:a 256k\"; else codec=\"-c:a copy\"; fi
               nice -n 19 ffmpeg -nostdin -loglevel error -y -i \"\$f\" -map 0:a:0 \$codec -movflags +faststart -f mp4 \"../out/Radiance Music/\${f%.*}.m4a\" ;;
       *.m4a|*.flac|*.mp3) cp \"\$f\" \"../out/Radiance Music/\" ;;
+      *.ogg) nice -n 19 ffmpeg -nostdin -loglevel error -y -i \"\$f\" -map 0:a:0 -c:a libfdk_aac -b:a 160k -movflags +faststart -f mp4 \"../out/Library/\${f%.*}.m4a\" ;;
       *) cp \"\$f\" ../out/Library/ ;;
     esac
   done

@@ -11,6 +11,7 @@ struct NowPlayingScreen: View {
     @Environment(\.dismiss) private var dismiss
     @State private var scrubbing: Double?
     @State private var showQueue = false
+    @State private var showMixer = false
     @AppStorage("nowplaying.lyrics") private var showLyrics = false
 
     var body: some View {
@@ -59,6 +60,7 @@ struct NowPlayingScreen: View {
             }
         }
         .sheet(isPresented: $showQueue) { QueueScreen() }
+        .sheet(isPresented: $showMixer) { if let t = app.player.current { MixerSheet(track: t) } }
         .presentationDragIndicator(.hidden)
     }
 
@@ -151,7 +153,22 @@ struct NowPlayingScreen: View {
                 }
                 .accessibilityLabel(showLyrics ? "Hide lyrics" : "Lyrics")
                 Spacer()
-                Menu { SongMenu(track: t) } label: {
+                // karaoke: tap for it (or back to the song), hold for the Mixer
+                let m = app.mixer
+                let on = m.voice != .song
+                Image(systemName: "music.mic").font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(on ? .black : (m.available ? .white : .white.opacity(0.35)))
+                    .frame(width: 40, height: 40)
+                    .background(on ? Color.white : Color.clear, in: Circle())
+                    .onTapGesture { if m.available { m.choose(on ? .song : .karaoke) } else { showMixer = true } }
+                    .onLongPressGesture { showMixer = true }
+                    .accessibilityLabel(on ? "Karaoke on" : "Karaoke")
+                    .accessibilityAddTraits(.isButton)
+                Spacer()
+                Menu {
+                    SongMenu(track: t)
+                    Button { showMixer = true } label: { Label("Mixer", systemImage: "slider.vertical.3") }
+                } label: {
                     Image(systemName: "ellipsis").font(.system(size: 18, weight: .semibold)).foregroundStyle(.white).frame(width: 40, height: 40)
                 }
                 .accessibilityLabel("More")
