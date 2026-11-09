@@ -12,6 +12,7 @@ struct NowPlayingScreen: View {
     @State private var scrubbing: Double?
     @State private var showQueue = false
     @State private var showMixer = false
+    @State private var sharing: (Track, String?)?
     @AppStorage("nowplaying.lyrics") private var showLyrics = false
 
     var body: some View {
@@ -24,7 +25,7 @@ struct NowPlayingScreen: View {
                     if wide {
                         HStack(spacing: 28) {
                             Group {
-                                if showLyrics { LyricsView(track: t).frame(maxWidth: geo.size.width * 0.5) }
+                                if showLyrics { LyricsView(track: t, onShareLine: { sharing = (t, $0) }).frame(maxWidth: geo.size.width * 0.5) }
                                 else { cover(t, size: min(geo.size.height - 60, geo.size.width * 0.42)) }
                             }
                             .frame(maxHeight: .infinity)
@@ -43,7 +44,7 @@ struct NowPlayingScreen: View {
                                     }
                                     Spacer()
                                 }
-                                LyricsView(track: t).frame(maxHeight: .infinity)
+                                LyricsView(track: t, onShareLine: { sharing = (t, $0) }).frame(maxHeight: .infinity)
                                 transport(t)
                             } else {
                                 Spacer(minLength: 0)
@@ -61,6 +62,9 @@ struct NowPlayingScreen: View {
         }
         .sheet(isPresented: $showQueue) { QueueScreen() }
         .sheet(isPresented: $showMixer) { if let t = app.player.current { MixerSheet(track: t) } }
+        .sheet(isPresented: Binding(get: { sharing != nil }, set: { if !$0 { sharing = nil } })) {
+            if let (t, line) = sharing { ShareSongSheet(track: t, lyrics: line) }
+        }
         .presentationDragIndicator(.hidden)
     }
 
@@ -168,6 +172,7 @@ struct NowPlayingScreen: View {
                 Menu {
                     SongMenu(track: t)
                     Button { showMixer = true } label: { Label("Mixer", systemImage: "slider.vertical.3") }
+                    Button { sharing = (t, nil) } label: { Label("Share on a story", systemImage: "square.and.arrow.up") }
                 } label: {
                     Image(systemName: "ellipsis").font(.system(size: 18, weight: .semibold)).foregroundStyle(.white).frame(width: 40, height: 40)
                 }
@@ -240,6 +245,8 @@ struct Backdrop: View {
 struct LyricsView: View {
     @Environment(AppModel.self) private var app
     let track: Track
+    /** Hold a line: share it on a story. */
+    var onShareLine: (String) -> Void = { _ in }
     @State private var lyrics: Lyrics?
     @State private var offline = false
     @State private var tries = 0
@@ -262,7 +269,7 @@ struct LyricsView: View {
                 }
                 .scrollIndicators(.hidden)
             case .timed(let lines)?:
-                TimedLyrics(lines: lines)
+                TimedLyrics(lines: lines, onShareLine: onShareLine)
             }
         }
         .task(id: "\(track.key)|\(tries)") {
@@ -279,6 +286,7 @@ struct LyricsView: View {
 struct TimedLyrics: View {
     @Environment(AppModel.self) private var app
     let lines: [Line]
+    var onShareLine: (String) -> Void = { _ in }
 
     var body: some View {
         // a line shows just before it's sung
@@ -298,6 +306,7 @@ struct TimedLyrics: View {
                             .padding(.vertical, 8)
                             .contentShape(Rectangle())
                             .onTapGesture { app.player.seek(line.start) }
+                            .onLongPressGesture { onShareLine(line.text) }
                             .animation(.easeOut(duration: 0.4), value: sung)
                             .id(i)
                     }

@@ -9,12 +9,18 @@ struct LibraryScreen: View {
     @Environment(AppModel.self) private var app
     let onSettings: () -> Void
 
-    enum Showing: Hashable { case liked, history, shelf(ShelfKind) }
+    enum Showing: Hashable { case liked, history, shelf(ShelfKind), server(String) }
     @State private var showing = Showing.liked
     @State private var filter = ""
 
     var body: some View {
         switch showing {
+        case .server(let first):
+            if let s = app.servers.list.first(where: { $0.first == first }) {
+                ServerLibraryView(server: s, header: AnyView(header(songs: [])))
+            } else {
+                songList
+            }
         case .shelf(let kind):
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
@@ -60,6 +66,8 @@ struct LibraryScreen: View {
                     pill("Liked Songs", app.library.liked.count, .liked)
                     pill("History", app.library.history.count, .history)
                     ForEach(ShelfKind.allCases) { k in pill(k.title, nil, .shelf(k)) }
+                    // each server you joined: its library
+                    ForEach(app.servers.list) { s in pill(s.name, nil, .server(s.first)) }
                 }
             }
             .scrollIndicators(.hidden)

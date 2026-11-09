@@ -28,6 +28,7 @@ struct RootView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .modifier(SidebarOnWide())
         .animation(.spring(duration: 0.35), value: app.notice)
         .background(Brand.night)
         .sheet(isPresented: $nowPlaying) { NowPlayingScreen() }
@@ -49,6 +50,8 @@ struct RootView: View {
     private func page<V: View>(@ViewBuilder _ content: () -> V) -> some View {
         NavigationStack {
             content()
+                .frame(maxWidth: Fit.page)
+                .frame(maxWidth: .infinity)
                 .background(Brand.night)
                 .toolbar(.hidden, for: .navigationBar)
                 .navigationDestination(for: ShelfPick.self) { GroupSongsView(pick: $0) }
@@ -133,5 +136,23 @@ struct NoticeBar: View {
         .padding(.horizontal, 16).padding(.vertical, 12)
         .background(Color(hex: 0x2C2C2E), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .onTapGesture { app.dismissNotice() }
+    }
+}
+
+/**
+ * Wide screens (Android's ui/Fit.kt): an iPad or a window 600 points across or more gets a sidebar in place of the
+ * tabs (iOS 18 and up), and its pages stay a readable width.
+ */
+enum Fit {
+    static let page: CGFloat = 840
+}
+
+struct SidebarOnWide: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.tabViewStyle(.sidebarAdaptable)
+        } else {
+            content
+        }
     }
 }
