@@ -30,7 +30,9 @@ if !kitOnly {
     targets.append(.target(name: "RadianceMusic", dependencies: [
         "RadianceKit",
         .product(name: "onnxruntime", package: "onnxruntime-swift-package-manager"),
-    ], path: "Sources/RadianceMusic"))
+    ], path: "Sources/RadianceMusic",
+    // What's New reads the changelog (a link to the one at the top; scripts/ribs.sh copies what it points to)
+    resources: [.copy("Bundled/CHANGELOG.md")]))
 }
 
 let package = Package(

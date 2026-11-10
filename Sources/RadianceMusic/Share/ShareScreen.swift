@@ -10,6 +10,8 @@ import SwiftUI
 struct ShareScreen: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
+    /** A share QR read by the Camera app (radiancemusic://share?…): taken at once, as if scanned here. */
+    var opened: String? = nil
     @State private var server: WireServer?
     @State private var ticket: Wire.Ticket?
     @State private var progress: Wire.Progress?
@@ -53,6 +55,7 @@ struct ShareScreen: View {
             }
         }
         .onDisappear { stopServer() }
+        .task { if let opened { scanned(opened) } }
     }
 
     private func big(_ title: String, _ icon: String, _ under: String, action: @escaping () -> Void) -> some View {

@@ -10,6 +10,8 @@ struct RootView: View {
     @State private var tab = Tab.home
     @State private var nowPlaying = false
     @State private var settings = false
+    /** How to use it, the first time the app opens (not while it's being checked from the laptop). */
+    @State private var guide = Guide.due && !AppModel.checking
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -33,7 +35,19 @@ struct RootView: View {
         .background(Brand.night)
         .sheet(isPresented: $nowPlaying) { NowPlayingScreen() }
         .sheet(isPresented: $settings) { SettingsScreen() }
+        .fullScreenCover(isPresented: $guide) { GuideScreen { Guide.seen(); guide = false } }
         .onChange(of: phase) { _, p in if p != .active { app.player.saveSession() } }
+        // a link opened the app: Settings takes it (Now Playing steps aside first: one sheet at a time)
+        .onOpenURL { app.opened($0) }
+        .onChange(of: app.opening) { _, o in
+            guard o != nil, !settings else { return }
+            if nowPlaying {
+                nowPlaying = false
+                Task { try? await Task.sleep(for: .milliseconds(600)); settings = true }
+            } else {
+                settings = true
+            }
+        }
         .task {
             app.startUp()
             // checking from the laptop (AppModel.test)

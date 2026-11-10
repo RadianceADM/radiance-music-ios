@@ -22,6 +22,18 @@
 	<string>Radiance Music uses the camera to scan the QR code of a computer, phone or server you share songs with.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Radiance Music sends and gets songs over your Wi-Fi from the computer or phone you share with.</string>
+	<!-- radiancemusic://join?u=… (a server's invite) and radiancemusic://share?… (a share QR read by the Camera) open the app -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>io.github.radianceadm.music</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>radiancemusic</string>
+			</array>
+		</dict>
+	</array>
 	<key>UIStatusBarStyle</key>
 	<string>UIStatusBarStyleLightContent</string>
 	<key>UIUserInterfaceStyle</key>

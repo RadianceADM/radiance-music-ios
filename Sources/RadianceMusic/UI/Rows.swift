@@ -115,6 +115,15 @@ struct SongMenu: View {
         Button { app.toggleLike(track) } label: {
             app.isLiked(track) ? Label("Unlike", systemImage: "heart.slash") : Label("Like", systemImage: "heart")
         }
+        // where others can hear it (Android's Copy link): YouTube Music, or the Internet Archive's page
+        if let url = URL(string: Links.song(track)) {
+            ShareLink(item: url, subject: Text(track.title), message: Text("\(track.title) — \(track.artist)")) {
+                Label("Share link", systemImage: "square.and.arrow.up")
+            }
+        }
+        Button { UIPasteboard.general.string = Links.song(track); app.tell("Link copied.") } label: {
+            Label("Copy link", systemImage: "link")
+        }
     }
 }
 

@@ -13,7 +13,7 @@ what=${1:-test}
 quiet() { grep -v -e '^---' -e 'Radiance Innovation' -e AUTHORIZED -e 'Personal data' -e 'Questions:' || true; }
 
 sync() {
-    rsync -a --delete --exclude .build --exclude /build --exclude /xtool --exclude /.bsp --exclude .git --exclude '*.ipa' ./ "ribs:$SRC/" 2>&1 | quiet
+    rsync -a --copy-links --delete --exclude .build --exclude /build --exclude /xtool --exclude /.bsp --exclude .git --exclude '*.ipa' ./ "ribs:$SRC/" 2>&1 | quiet
     ssh ribs "chown -R radmin: $SRC" 2>&1 | quiet
 }
 

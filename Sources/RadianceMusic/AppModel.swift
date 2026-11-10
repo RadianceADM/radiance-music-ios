@@ -37,6 +37,10 @@ final class AppModel {
         didSet { UserDefaults.standard.set(stone, forKey: "look.stone") }
     }
 
+    /** A link that opened the app (radiancemusic://…), for Settings to take: a server's invite, or a share QR. */
+    enum Opening: Equatable { case invite(String), share(String) }
+    var opening: Opening?
+
     @ObservationIgnored private let monitor = NWPathMonitor()
 
     /**
@@ -66,6 +70,21 @@ final class AppModel {
         }
         monitor.start(queue: DispatchQueue(label: "radiance.online"))
         Task { await servers.refresh(online: online) }
+    }
+
+    /**
+     * The app opened from a link (Android's: the server's join page's radiancemusic://join?u=…, or a share QR read by
+     * the Camera app): Settings asks to join, or the share starts.
+     */
+    func opened(_ url: URL) {
+        let link = url.absoluteString
+        if let invite = Servers.joinLink(link), Servers.invite(invite) != nil {
+            opening = .invite(invite)
+        } else if Wire.Ticket.parse(link) != nil {
+            opening = .share(link)
+        } else {
+            tell("That link isn't one Radiance Music knows.")
+        }
     }
 
     func tell(_ words: String, action: (String, () -> Void)? = nil) {
@@ -326,6 +345,9 @@ final class AppModel {
     }
 
     /** This iPhone as a server lists it: "Apple iPhone13,2". */
+    /** Opened from the laptop with an RM_ setting (AppModel.test): no first-open guide in the way. */
+    static var checking: Bool { ProcessInfo.processInfo.environment.keys.contains { $0.hasPrefix("RM_") } }
+
     static var deviceName: String {
         var u = utsname()
         uname(&u)
