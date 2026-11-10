@@ -157,43 +157,57 @@ struct ShareSongSheet: View {
     }
 }
 
-/** Choose lyrics (Android's): tap lines to pick them, next to each other, 150 characters at most. */
+/**
+ * Choose lyrics (Android's LyricPicker): tap lines to pick them, or hold one and slide up or down (owner, 2026-11-08:
+ * "click and swipe to select"); lines next to each other, 150 characters at most. Held at the top or the bottom, the
+ * list goes on that way, picking as it goes; a quick swipe still scrolls.
+ */
 struct ChooseLyrics: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     let lines: [String]?
     @Binding var picked: [Int]
     @State private var say: String?
+    /** The line held, while the finger's down; where the finger is; each line on screen, where it is. */
+    @State private var anchor: Int?
+    @State private var fingerY: CGFloat = 0
+    @State private var frames: [Int: CGRect] = [:]
+    @State private var warned = false
+    @State private var edgeScroll: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
             Group {
                 if let lines, !lines.isEmpty {
-                    List {
-                        if let say { Text(say).font(.system(size: 13)).foregroundStyle(Brand.glow).listRowBackground(Brand.sheet) }
-                        ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
-                            let on = picked.contains(i)
-                            Text(line.isEmpty ? "♪" : line)
-                                .font(.system(size: 20, weight: .bold))
-                                .foregroundStyle(on ? .black : .white)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.vertical, 8).padding(.horizontal, 12)
-                                .background(on ? Brand.orange : Color.clear, in: RoundedRectangle(cornerRadius: 12))
-                                .contentShape(Rectangle())
-                                .onTapGesture { say = LyricPick.tap(&picked, i, lines.map(\.count)) }
-                                .listRowBackground(Brand.sheet)
-                                .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 1, leading: 12, bottom: 1, trailing: 12))
+                    VStack(spacing: 0) {
+                        Text(say ?? "Tap the lines to share, or hold one and slide.")
+                            .font(.system(size: 14)).foregroundStyle(say == nil ? .white.opacity(0.75) : Brand.glow)
+                            .multilineTextAlignment(.center).padding(.horizontal, 28).padding(.vertical, 6)
+                        GeometryReader { g in
+                            ScrollViewReader { list in
+                                ScrollView {
+                                    LazyVStack(spacing: 0) {
+                                        ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
+                                            row(i, line, lines, height: g.size.height, list: list)
+                                        }
+                                    }
+                                    .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 40)
+                                }
+                                .scrollDisabled(anchor != nil)
+                                .coordinateSpace(name: "lyrics")
+                                .onPreferenceChange(LineFrames.self) { frames = $0 }
+                            }
                         }
                     }
-                    .listStyle(.plain)
-                    .scrollContentBackground(.hidden)
+                    .frame(maxWidth: Fit.page)
+                    .sensoryFeedback(.selection, trigger: picked)
                 } else if lines == nil {
                     ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     Note(app.online ? "No lyrics found for this song." : "You're offline. Connect to pick lyrics.")
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Brand.sheet)
             .navigationTitle("Choose lyrics")
             .navigationBarTitleDisplayMode(.inline)
@@ -203,8 +217,98 @@ struct ChooseLyrics: View {
                     Text("\(used)/\(LyricPick.most)").font(.system(size: 14).monospacedDigit())
                         .foregroundStyle(used >= LyricPick.most - 10 ? Brand.glow : .white.opacity(0.7))
                 }
-                ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() }.disabled(picked.isEmpty) }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { dismiss() } label: { Label("Done", systemImage: "checkmark").labelStyle(.titleAndIcon) }.disabled(picked.isEmpty)
+                }
             }
         }
     }
+
+    private func row(_ i: Int, _ line: String, _ lines: [String], height: CGFloat, list: ScrollViewProxy) -> some View {
+        let on = picked.contains(i)
+        // picked lines share one highlight: round only where it starts and ends
+        let top: CGFloat = on && picked.contains(i - 1) ? 0 : 14
+        let bottom: CGFloat = on && picked.contains(i + 1) ? 0 : 14
+        return Text(line.isEmpty ? "♪" : line)
+            .font(.system(size: 24, weight: .heavy))
+            .foregroundStyle(on ? .white : .white.opacity(0.45))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 8).padding(.horizontal, 12)
+            .background(on ? Color.white.opacity(0.14) : .clear,
+                        in: UnevenRoundedRectangle(topLeadingRadius: top, bottomLeadingRadius: bottom, bottomTrailingRadius: bottom, topTrailingRadius: top, style: .continuous))
+            .contentShape(Rectangle())
+            .background(GeometryReader { f in Color.clear.preference(key: LineFrames.self, value: [i: f.frame(in: .named("lyrics"))]) })
+            .id(i)
+            .onTapGesture { say = LyricPick.tap(&picked, i, lines.map(\.count)) }
+            // held: the picking starts here, again from this line; then where the finger goes picks the lines
+            .gesture(
+                LongPressGesture(minimumDuration: 0.35)
+                    .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("lyrics")))
+                    .onChanged { v in
+                        switch v {
+                        case .first(true):
+                            hold(i, lines)
+                        case .second(true, let drag?):
+                            if anchor == nil { hold(i, lines) }
+                            fingerY = drag.location.y
+                            slide(lines)
+                            edge(height: height, lines: lines, list: list)
+                        default:
+                            break
+                        }
+                    }
+                    .onEnded { _ in
+                        anchor = nil
+                        edgeScroll?.cancel()
+                        edgeScroll = nil
+                    }
+            )
+    }
+
+    private func hold(_ i: Int, _ lines: [String]) {
+        guard anchor == nil else { return }
+        if lines[i].count > LyricPick.most { say = "That line is longer than \(LyricPick.most) characters"; return }
+        picked = [i]
+        warned = false
+        say = nil
+        anchor = i
+    }
+
+    /** The line under the finger (above or below the lines on screen: the first or the last of them). */
+    private func lineAt(_ y: CGFloat) -> Int? {
+        guard !frames.isEmpty else { return nil }
+        if let hit = frames.first(where: { y >= $0.value.minY && y < $0.value.maxY }) { return hit.key }
+        let shown = frames.sorted { $0.value.minY < $1.value.minY }
+        return y < shown.first!.value.minY ? shown.first!.key : shown.last!.key
+    }
+
+    private func slide(_ lines: [String]) {
+        guard let from = anchor, let to = lineAt(fingerY) else { return }
+        let (run, capped) = LyricPick.stretch(from, to, lines.map(\.count))
+        if capped && !warned { warned = true; say = "\(LyricPick.most) characters at most" }
+        if run != picked.sorted() { picked = run }
+    }
+
+    /** The finger held near the top or the bottom: the list goes on that way, a line at a time, picking as it goes. */
+    private func edge(height: CGFloat, lines: [String], list: ScrollViewProxy) {
+        let way = fingerY < 64 ? -1 : fingerY > height - 64 ? 1 : 0
+        if way == 0 { edgeScroll?.cancel(); edgeScroll = nil; return }
+        guard edgeScroll == nil else { return }
+        edgeScroll = Task { @MainActor in
+            while !Task.isCancelled, anchor != nil {
+                let shown = frames.keys.sorted()
+                guard let next = way > 0 ? shown.last.map({ $0 + 1 }) : shown.first.map({ $0 - 1 }), lines.indices.contains(next) else { break }
+                withAnimation(.linear(duration: 0.12)) { list.scrollTo(next, anchor: way > 0 ? .bottom : .top) }
+                try? await Task.sleep(for: .milliseconds(140))
+                slide(lines)
+            }
+            edgeScroll = nil
+        }
+    }
+}
+
+/** Each lyric line on screen and where it is, for the finger to find. */
+private struct LineFrames: PreferenceKey {
+    static let defaultValue: [Int: CGRect] = [:]
+    static func reduce(value: inout [Int: CGRect], nextValue: () -> [Int: CGRect]) { value.merge(nextValue()) { $1 } }
 }
