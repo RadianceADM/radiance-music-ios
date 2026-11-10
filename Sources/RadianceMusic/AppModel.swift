@@ -27,6 +27,9 @@ final class AppModel {
     var mixer: Mixer { mix! }
     @ObservationIgnored private var splits: Splitter?
     var splitter: Splitter { splits! }
+    @ObservationIgnored private var room: Party?
+    /** The listening party this iPhone is in (if any). */
+    var party: Party { room! }
     /** Songs being saved now (their keys) and how far, 0-1. */
     private(set) var saving: [String: Double] = [:]
     private(set) var notice: Notice?
@@ -59,6 +62,7 @@ final class AppModel {
         mix = Mixer(app: self)
         splits = Splitter(app: self)
         hub = PlayerHub(app: self)
+        room = Party(app: self)
         monitor.pathUpdateHandler = { [weak self] path in
             let up = path.status == .satisfied
             Task { @MainActor in

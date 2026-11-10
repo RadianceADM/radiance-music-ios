@@ -13,6 +13,9 @@
   iPhone is hot or low on battery). The Mixer: Song, Karaoke or Vocals only, low cut, high cut, reverb.
 - **Your server**: join a Radiance Music Server by its invite (a link, or its QR), play and save its songs, ask it to
   split one. A YouTube song plays from the server when it has it, and songs you split here go up to it.
+- **Listening parties** on your server: everyone hears the same song at the same moment, with reactions floating
+  up; anyone adds songs, the host plays, pauses and skips (or lets everyone). Songs saved as Opus don't play on the
+  iPhone yet.
 - **Share**: songs to another phone or the computer by QR; a song as a story with its cover or its lyrics; a song's
   link.
 - **On iPad** and wide windows, a sidebar; Now Playing side by side.

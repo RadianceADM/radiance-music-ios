@@ -42,6 +42,10 @@ final class PlayerHub {
     @ObservationIgnored private var ends: [NSObjectProtocol] = []
     @ObservationIgnored private var ticker: Any?
     @ObservationIgnored private var artFor: String?
+    /** A listening party plays through the player now (Party): its song only, your own music kept aside. */
+    @ObservationIgnored private(set) var inParty = false
+    /** A call or an alarm has the sound for now. */
+    @ObservationIgnored private(set) var interrupted = false
     /** A YouTube song's copy on your server, by its key (asked once per run). */
     @ObservationIgnored private var serverCopy: [String: String] = [:]
 
@@ -128,6 +132,8 @@ final class PlayerHub {
     }
 
     func toggle() {
+        // in a party: listening here, or not (the party goes on either way)
+        if inParty { return app.party.listenHere(!playing) }
         if playing { return pause() }
         // stopped by a song that wouldn't play: Play tries it again
         if problem != nil { streak.retry(); problem = nil }
@@ -163,11 +169,13 @@ final class PlayerHub {
     }
 
     func next() {
+        if inParty { return app.party.skip() }
         picked()
         if let n = nextIndex(auto: false) { load(n, at: 0, play: true) }
     }
 
     func previous() {
+        if inParty { return }
         picked()
         if position > 4 || previousIndex() == nil { return seek(0) }
         load(previousIndex()!, at: 0, play: playing || player.currentItem == nil)
@@ -175,6 +183,7 @@ final class PlayerHub {
 
     /** The song before, whatever the place in this one (a swipe on the cover). */
     func previousSong() {
+        if inParty { return }
         picked()
         if let p = previousIndex() { load(p, at: 0, play: true) } else { seek(0) }
     }
@@ -186,6 +195,7 @@ final class PlayerHub {
     }
 
     func seek(_ seconds: Double) {
+        if inParty { return app.party.seek(Int64(max(0, seconds) * 1000)) }
         position = max(0, seconds)
         player.seek(to: CMTime(seconds: position, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
         app.mixer.seeked(to: position)
@@ -251,7 +261,122 @@ final class PlayerHub {
     }
 
     func saveSession() {
+        // a party's song isn't where you left off: your own music is
+        if inParty { return }
         app.library.saveSession(queue: queue, index: index, positionMs: Int64(position * 1000))
+    }
+
+    // MARK: - a listening party plays through here (Party)
+
+    /** Your own music before a party, to go back to. */
+    struct Mine {
+        let queue: [Track]
+        let index: Int
+        let position: Double
+    }
+
+    /** The party starts on this iPhone: your own music is kept aside, paused. */
+    func enterParty() -> Mine {
+        let mine = Mine(queue: queue, index: index, position: exactPosition)
+        if playing { pause() }
+        saveSession()
+        inParty = true
+        return mine
+    }
+
+    /** The party's over here: back to your own music, where it was (paused). */
+    func leaveParty(_ mine: Mine?) {
+        guard inParty else { return }
+        loading?.cancel()
+        clearItem()
+        partySpeed(1)
+        inParty = false
+        playing = false
+        buffering = false
+        problem = nil
+        note = nil
+        guard let mine, mine.queue.indices.contains(mine.index) else {
+            queue = []
+            index = 0
+            app.mixer.songChanged(nil)
+            return updateNowPlaying()
+        }
+        queue = mine.queue
+        index = mine.index
+        rebuildOrder()
+        load(mine.index, at: mine.position, play: false)
+    }
+
+    /** The party's song into the player, held at [at] seconds (nil: nothing playing). */
+    func partyLoad(_ t: Track?, at: Double) {
+        guard inParty else { return }
+        partySpeed(1)
+        guard let t else {
+            loading?.cancel()
+            clearItem()
+            queue = []
+            index = 0
+            playing = false
+            buffering = false
+            app.mixer.songChanged(nil)
+            return updateNowPlaying()
+        }
+        queue = [t]
+        order = [0]
+        load(0, at: max(0, at), play: false)
+    }
+
+    /** Plays the party's song, from [ms] when given (exactly there). */
+    func partyPlay(at ms: Int64? = nil) {
+        guard inParty, current != nil else { return }
+        if let ms {
+            position = Double(max(0, ms)) / 1000
+            player.seek(to: CMTime(value: max(0, ms), timescale: 1000), toleranceBefore: .zero, toleranceAfter: .zero)
+            app.mixer.seeked(to: position)
+        }
+        problem = nil
+        if player.currentItem == nil { return }
+        resume()
+    }
+
+    /** Held still (the party paused, or you stopped listening here). */
+    func partyHold() {
+        guard inParty else { return }
+        if playing || player.rate != 0 { pause() }
+        partySpeed(1)
+    }
+
+    /** Jumps to [ms] in the party's song (exactly there). */
+    func partySeek(_ ms: Int64) {
+        guard inParty else { return }
+        position = Double(max(0, ms)) / 1000
+        player.seek(to: CMTime(value: max(0, ms), timescale: 1000), toleranceBefore: .zero, toleranceAfter: .zero)
+        app.mixer.seeked(to: position)
+        updateNowPlaying()
+    }
+
+    /** A little faster or slower, to ease back in step with the party (the pitch stays). */
+    func partySpeed(_ s: Float) {
+        if abs(player.defaultRate - s) < 0.0005 { return }
+        player.defaultRate = s
+        if player.rate != 0 { player.rate = s }
+    }
+
+    var partyNudging: Bool { abs(player.defaultRate - 1) > 0.0005 }
+    /** Where the party's song really is now, ms. */
+    var partyMs: Int64 { Int64((exactPosition * 1000).rounded()) }
+    /** The party's song is in the player (or on its way). */
+    var partyHasSong: Bool { player.currentItem != nil || current != nil }
+    /** Playing sound right now (not waiting for it to load). */
+    var partySounding: Bool { player.timeControlStatus == .playing }
+    var partyWaiting: Bool { player.timeControlStatus == .waitingToPlayAtSpecifiedRate || (playing && player.currentItem == nil) }
+    var partyFailed: Bool { problem != nil || player.currentItem?.status == .failed }
+
+    /** A song that stopped loading: tried again. */
+    func partyRetry(at ms: Int64) {
+        guard inParty, current != nil else { return }
+        problem = nil
+        load(0, at: Double(max(0, ms)) / 1000, play: false)
     }
 
     // MARK: - the order songs come in
@@ -304,6 +429,8 @@ final class PlayerHub {
                 guard !Task.isCancelled, self.current?.key == t.key else { return }
                 self.note = nil
                 let item = AVPlayerItem(asset: AVURLAsset(url: url))
+                // a party nudges the speed by a few %: the pitch stays
+                item.audioTimePitchAlgorithm = .timeDomain
                 self.watchItem(item, t)
                 self.player.replaceCurrentItem(with: item)
                 if at > 0 { await self.player.seek(to: CMTime(seconds: at, preferredTimescale: 600)) }
@@ -394,6 +521,7 @@ final class PlayerHub {
     }
 
     private func ended() {
+        if inParty { playing = false; buffering = false; updateNowPlaying(); return }
         if let n = nextIndex(auto: true) {
             if n == index { seek(0); player.play(); return }
             load(n, at: 0, play: true)
@@ -412,6 +540,11 @@ final class PlayerHub {
         let why: String
         if let r = error as? Refused { why = r.words } else { why = Errors.say(error, online: app.online) }
         note = nil
+        if inParty {
+            problem = "Couldn't play. \(why)"
+            stopped()
+            return
+        }
         let then = streak.failed(hasNext: nextIndex(auto: false) != nil)
         switch then {
         case .next:
@@ -476,6 +609,7 @@ final class PlayerHub {
             let opts = AVAudioSession.InterruptionOptions(rawValue: n.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0)
             MainActor.assumeIsolated {
                 guard let self else { return }
+                if type == .began { self.interrupted = true } else if type == .ended { self.interrupted = false }
                 if type == .began { if self.playing { self.player.pause(); self.updateNowPlaying() } }
                 else if type == .ended, opts.contains(.shouldResume), self.playing { self.resume() }
                 else if type == .ended { self.playing = false; self.updateNowPlaying() }
@@ -484,7 +618,11 @@ final class PlayerHub {
         // headphones out: it pauses
         nc.addObserver(forName: AVAudioSession.routeChangeNotification, object: s, queue: .main) { [weak self] n in
             let reason = (n.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt).flatMap(AVAudioSession.RouteChangeReason.init)
-            MainActor.assumeIsolated { if reason == .oldDeviceUnavailable, self?.playing == true { self?.pause() } }
+            MainActor.assumeIsolated {
+                guard reason == .oldDeviceUnavailable, let self, self.playing else { return }
+                // in a party: not listening here any more (it would play on from the speaker otherwise)
+                if self.inParty { self.app.party.listenHere(false) } else { self.pause() }
+            }
         }
     }
 
@@ -495,7 +633,13 @@ final class PlayerHub {
     private func setUpRemote() {
         let c = MPRemoteCommandCenter.shared()
         c.playCommand.addTarget { [weak self] _ in MainActor.assumeIsolated { if self?.playing == false { self?.toggle() } }; return .success }
-        c.pauseCommand.addTarget { [weak self] _ in MainActor.assumeIsolated { self?.pause() }; return .success }
+        c.pauseCommand.addTarget { [weak self] _ in
+            MainActor.assumeIsolated {
+                // in a party, the lock screen's pause stops listening here (the party goes on)
+                if self?.inParty == true { self?.app.party.listenHere(false) } else { self?.pause() }
+            }
+            return .success
+        }
         c.togglePlayPauseCommand.addTarget { [weak self] _ in MainActor.assumeIsolated { self?.toggle() }; return .success }
         c.nextTrackCommand.addTarget { [weak self] _ in MainActor.assumeIsolated { self?.next() }; return .success }
         c.previousTrackCommand.addTarget { [weak self] _ in MainActor.assumeIsolated { self?.previous() }; return .success }

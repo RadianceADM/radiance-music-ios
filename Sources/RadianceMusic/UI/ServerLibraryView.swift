@@ -16,6 +16,8 @@ struct ServerLibraryView: View {
     @State private var filter = ""
     @State private var queue: SplitQueue?
     @State private var loadingMore = false
+    /** The server's listening party now (asked with its split queue). */
+    @State private var party: PartyState?
 
     static let pageSize = 60
 
@@ -30,6 +32,7 @@ struct ServerLibraryView: View {
                 }
                 .padding(.horizontal, 14).frame(height: 44).background(Brand.card, in: Capsule())
                 .listRowBackground(Brand.night).listRowSeparator(.hidden)
+                PartyCard(server: server, state: party).listRowBackground(Brand.night).listRowSeparator(.hidden)
                 if case .removed(let why) = app.servers.health[server.base] ?? .unknown {
                     Text(why).font(.system(size: 14)).foregroundStyle(Brand.heart).listRowBackground(Brand.night)
                 }
@@ -82,6 +85,7 @@ struct ServerLibraryView: View {
         .task(id: server.first) {
             while !Task.isCancelled {
                 queue = try? await server.rms.queue()
+                party = try? await server.rms.party()
                 try? await Task.sleep(for: .seconds(queue?.jobs.contains(where: \.open) == true ? 3 : 20))
             }
         }

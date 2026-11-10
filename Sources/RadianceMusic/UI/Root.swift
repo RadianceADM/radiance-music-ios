@@ -14,7 +14,8 @@ struct RootView: View {
     @State private var guide = Guide.due && !AppModel.checking
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        @Bindable var party = app.party
+        return ZStack(alignment: .bottom) {
             TabView(selection: $tab) {
                 page { HomeScreen(onSearch: { tab = .search }, onSettings: { settings = true }) }
                     .tabItem { Label("Home", systemImage: "house.fill") }.tag(Tab.home)
@@ -35,6 +36,7 @@ struct RootView: View {
         .background(Brand.night)
         .sheet(isPresented: $nowPlaying) { NowPlayingScreen() }
         .sheet(isPresented: $settings) { SettingsScreen() }
+        .sheet(isPresented: $party.shown) { PartyScreen() }
         .fullScreenCover(isPresented: $guide) { GuideScreen { Guide.seen(); guide = false } }
         .onChange(of: phase) { _, p in if p != .active { app.player.saveSession() } }
         // a link opened the app: Settings takes it (Now Playing steps aside first: one sheet at a time)
@@ -72,7 +74,8 @@ struct RootView: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if app.player.current != nil {
-                MiniPlayer(onOpen: { nowPlaying = true }).padding(.horizontal, 8).padding(.bottom, 6)
+                // in a party, the song playing opens the party
+                MiniPlayer(onOpen: { if app.party.joined { app.party.shown = true } else { nowPlaying = true } }).padding(.horizontal, 8).padding(.bottom, 6)
             }
         }
     }

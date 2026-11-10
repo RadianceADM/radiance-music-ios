@@ -55,6 +55,9 @@ final class Mixer {
 
     func hasParts(_ t: Track) -> Bool { !partsOf(t).isEmpty }
 
+    /** The parts are what's heard now (the player's own sound is down): a party doesn't nudge their speed. */
+    var playsParts: Bool { engine != nil }
+
     /** The song's own file on the iPhone (its saved copy), if it has one. */
     private func ownFile(_ t: Track) -> URL? {
         guard let f = app.paths.file(app.library.best(t).file), f.isFileURL, FileManager.default.fileExists(atPath: f.path) else { return nil }
