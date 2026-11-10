@@ -76,7 +76,7 @@ final class Mixer {
         if let file = try? AVAudioFile(forReading: f), let b = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 4096) {
             ok = (try? file.read(into: b)) != nil && b.frameLength > 0
         }
-        if !ok { print("radiance-mix: the engine can't read \(f.lastPathComponent); the player plays it") }
+        if !ok { Log.say("mix", "the engine can't read \(f.lastPathComponent); the player plays it") }
         readable[f.path] = ok
         return ok
     }
@@ -168,14 +168,16 @@ final class Mixer {
     private func engage(_ t: Track, at: Double) {
         let parts = available ? partsOf(t) : [:]
         do {
-            let e = try PartsEngine(parts: parts, song: ownFile(t))
+            let own = ownFile(t)
+            let e = try PartsEngine(parts: parts, song: own)
+            Log.say("mix", "on for “\(t.title)”: \(parts.keys.sorted().joined(separator: ", "))\(own != nil ? " and the song itself" : ""), \(voice.rawValue)")
             engine = e
             e.set(gains(), seconds: 0.08)
             e.play(from: at)
             app.player.setVolume(0)
             follow()
         } catch {
-            print("radiance-mix: the parts won't open: \(error)")
+            Log.say("mix", "the parts won't open: \(error)")
             engine = nil
             app.player.setVolume(1)
         }

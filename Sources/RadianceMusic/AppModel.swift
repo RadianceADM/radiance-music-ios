@@ -329,9 +329,9 @@ final class AppModel {
             }
             _ = try await rms.uploadParts(song: id, parts: files)
             pendingUploads.remove(t.key)
-            print("radiance-split: “\(t.title)” and its parts are on \(server.name)")
+            Log.say("split", "“\(t.title)” and its parts are on \(server.name)")
         } catch {
-            print("radiance-split: couldn't send “\(t.title)” to \(server.name): \(error)")
+            Log.say("split", "couldn't send “\(t.title)” to \(server.name): \(error)")
             pendingUploads.insert(t.key)
         }
     }

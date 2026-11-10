@@ -124,7 +124,7 @@ final class WireServer: @unchecked Sendable {
                 try? out.close()
                 guard let self, ok, let store = self.store else { try? FileManager.default.removeItem(at: tmp); return self?.reply(c, 400, "cut short") ?? () }
                 Task {
-                    do { try await store.write(item, kind, tmp) } catch { print("radiance-share: couldn't keep \(kind): \(error)") }
+                    do { try await store.write(item, kind, tmp) } catch { Log.say("share", "couldn't keep \(kind): \(error)") }
                     try? FileManager.default.removeItem(at: tmp)
                     self.queue.async {
                         self.bytes += length

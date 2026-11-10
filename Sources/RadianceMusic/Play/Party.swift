@@ -408,7 +408,7 @@ final class Party {
         let far = abs(at - target) > PartyClock.jumpPast(parts)
         switch PartyClock.decide(at, target, lead: lead, nudging: hub.partyNudging, farBefore: farLast, sinceJumpMs: local() - lastJumpAt, parts: parts) {
         case .jump(let to):
-            print("radiance-party: jumped, \(at - target) ms off\(parts ? " (karaoke)" : "")")
+            Log.say("party", "jumped, \(at - target) ms off\(parts ? " (karaoke)" : "")")
             hub.partySeek(to)
             hub.partySpeed(1)
             jumpedAt = local()

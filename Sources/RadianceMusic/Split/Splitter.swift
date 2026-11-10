@@ -83,7 +83,7 @@ final class Splitter {
                     self.working = nil
                 } catch {
                     self.working = nil
-                    print("radiance-split: “\(t.title)” wouldn't split: \(error)")
+                    Log.say("split", "“\(t.title)” wouldn't split: \(error)")
                     let why = (error as? Plain)?.words ?? Errors.say(error, online: self.app.online)
                     self.app.tell("Couldn't split “\(t.title)”. \(why)", action: ("Retry", { [weak self] in self?.split(t) }))
                 }
@@ -198,7 +198,7 @@ final class Splitter {
                                   progress: (Double) -> Void) async throws {
         let pcm = try await decode(song)
         let total = pcm.count / 2
-        print("radiance-split: on \(threads) of \(mostCores) cores")
+        Log.say("split", "on \(threads) of \(mostCores) cores")
         let (env, vocals) = try Onnx.session(models.0, threads: threads)
         let (_, music) = try Onnx.session(models.1, threads: threads)
         _ = env
@@ -236,6 +236,8 @@ final class Splitter {
             try? FileManager.default.removeItem(at: f)
             try FileManager.default.moveItem(at: partials[i], to: f)
         }
+        let sizes = names.map { n in "\(n) \(((try? FileManager.default.attributesOfItem(atPath: out.appendingPathComponent("\(n).m4a").path))?[.size] as? NSNumber)?.intValue ?? 0) bytes" }
+        Log.say("split", "\(total / 44100) s split: \(sizes.joined(separator: ", "))")
     }
 
     /** The song as 44.1 kHz stereo float samples, interleaved (a mono song made stereo). */

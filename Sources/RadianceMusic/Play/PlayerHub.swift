@@ -428,6 +428,7 @@ final class PlayerHub {
                 let url = try await self.find(t)
                 guard !Task.isCancelled, self.current?.key == t.key else { return }
                 self.note = nil
+                Log.say("play", "“\(t.title)” from \(url.isFileURL ? "its file here (\(url.pathExtension))" : url.host ?? "?")")
                 let item = AVPlayerItem(asset: AVURLAsset(url: url))
                 // a party nudges the speed by a few %: the pitch stays
                 item.audioTimePitchAlgorithm = .timeDomain
@@ -536,7 +537,7 @@ final class PlayerHub {
 
     /** A song wouldn't play: why, in plain words, and on to the next one (not past three in a row). */
     private func couldnt(_ t: Track, _ error: Error) {
-        print("radiance-play: “\(t.title)” (\(t.key)) wouldn't play: \(error)")
+        Log.say("play", "“\(t.title)” (\(t.key)) wouldn't play: \(error)")
         let why: String
         if let r = error as? Refused { why = r.words } else { why = Errors.say(error, online: app.online) }
         note = nil
@@ -584,7 +585,7 @@ final class PlayerHub {
         PhoneShare.playing.value = s == .playing
         switch s {
         case .playing:
-            print("radiance-play: playing “\(current?.title ?? "?")”")
+            Log.say("play", "playing “\(current?.title ?? "?")”")
             app.mixer.playingChanged(true, at: exactPosition)
             buffering = false
             streak.played()
