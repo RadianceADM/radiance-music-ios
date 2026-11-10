@@ -30,7 +30,7 @@ public enum Import {
         for (k, v) in parts {
             guard let n = v.string else { continue }
             let f = p.imports.appendingPathComponent(n)
-            if FileManager.default.fileExists(atPath: f.path) { out[k] = f }
+            if Splits.whole(f) { out[k] = f }
         }
         return out
     }

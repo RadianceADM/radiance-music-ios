@@ -57,6 +57,9 @@ struct RootView: View {
             if app.test["RM_OPEN"] == "library" { tab = .library }
             try? await Task.sleep(for: .seconds(Double(app.test["RM_OPEN_AFTER"] ?? "0") ?? 0))
             if let n = app.test["RM_PLAY_LIKED"].flatMap(Int.init), app.library.liked.indices.contains(n) { app.player.play(app.library.liked, n) }
+            // the song playing split here (RM_SPLIT), and the Mixer's voice (RM_VOICE: song, karaoke, vocalsOnly)
+            if app.test["RM_SPLIT"] != nil, let t = app.player.current { app.splitter.split(t) }
+            if let v = app.test["RM_VOICE"].flatMap(Mixer.Voice.init(rawValue:)) { app.mixer.choose(v) }
             if app.test["RM_OPEN"] == "nowplaying" { nowPlaying = true }
             if app.test["RM_OPEN"] == "settings" { settings = true }
         }

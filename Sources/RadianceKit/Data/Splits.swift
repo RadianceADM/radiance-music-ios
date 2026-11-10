@@ -5,6 +5,18 @@ public enum Splits {
     public static let names = ["drums", "bass", "other", "vocals", "music", "piano", "guitar"]
     static let types = ["m4a", "caf", "wav", "flac"]
 
+    /**
+     * A part smaller than this has no sound in it (a header only: 2026-11-10, a song the split couldn't read left two
+     * 557-byte parts, and the song went quiet when the Mixer played them). Such a part is as good as none.
+     */
+    public static let leastBytes: Int64 = 8 * 1024
+
+    /** [f] is there with sound in it. */
+    public static func whole(_ f: URL) -> Bool {
+        guard let size = (try? FileManager.default.attributesOfItem(atPath: f.path))?[.size] as? NSNumber else { return false }
+        return size.int64Value >= leastBytes
+    }
+
     public static func dir(_ p: Paths, _ key: String) -> URL { p.parts.appendingPathComponent(Saver.safe(key), isDirectory: true) }
 
     /** The parts split here for [key]: name to file (only whole ones: a split writes each beside, then puts it in place). */
@@ -14,7 +26,7 @@ public enum Splits {
         for n in names {
             for ext in types {
                 let f = d.appendingPathComponent("\(n).\(ext)")
-                if FileManager.default.fileExists(atPath: f.path) { out[n] = f; break }
+                if whole(f) { out[n] = f; break }
             }
         }
         return out

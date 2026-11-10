@@ -49,7 +49,8 @@ final class AppModel {
     /**
      * For checking on the iPhone from the laptop (`pymobiledevice3 developer dvt launch --env RM_SEARCH=…`): a search
      * to run (RM_SEARCH), the result to play (RM_PLAY, from 0), a screen to open (RM_OPEN: nowplaying, settings,
-     * library), a liked song to play (RM_PLAY_LIKED, from 0). Nothing happens without them.
+     * library), a liked song to play (RM_PLAY_LIKED, from 0), that song split (RM_SPLIT), the Mixer's voice (RM_VOICE).
+     * Nothing happens without them.
      */
     @ObservationIgnored let test = ProcessInfo.processInfo.environment
 

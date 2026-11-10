@@ -107,7 +107,7 @@ final class Splitter {
         }
         // the work itself, off the main thread
         try await Task.detached(priority: .utility) {
-            try Splitter.split(song: song, into: out, models: models, threads: Splitter.coresNow(), beforeBlock: check) { done in
+            try await Splitter.split(song: song, into: out, models: models, threads: Splitter.coresNow(), beforeBlock: check) { done in
                 Task { @MainActor [weak self] in if self?.working?.key == key { self?.working = (key, done, "Splitting… \(Int(done * 100)) %") } }
             }
         }.value
@@ -195,8 +195,8 @@ final class Splitter {
      * put in place (a stopped split leaves no half parts).
      */
     nonisolated static func split(song: URL, into out: URL, models: (URL, URL), threads: Int32, beforeBlock: () throws -> Void,
-                                  progress: (Double) -> Void) throws {
-        let pcm = try decode(song)
+                                  progress: (Double) -> Void) async throws {
+        let pcm = try await decode(song)
         let total = pcm.count / 2
         print("radiance-split: on \(threads) of \(mostCores) cores")
         let (env, vocals) = try Onnx.session(models.0, threads: threads)
@@ -239,40 +239,35 @@ final class Splitter {
     }
 
     /** The song as 44.1 kHz stereo float samples, interleaved (a mono song made stereo). */
-    nonisolated static func decode(_ url: URL) throws -> [Float] {
-        let file = try AVAudioFile(forReading: url)
-        let src = file.processingFormat
-        let dst = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 44100, channels: 2, interleaved: false)!
-        guard let conv = AVAudioConverter(from: src, to: dst) else { throw Plain("This song's file can't be read for a split.") }
-        if src.channelCount == 1 { conv.channelMap = [0, 0] }
+    /**
+     * The song's sound as 44.1 kHz stereo, read the way the player reads it (AVAssetReader: Opus inside .m4a too, as
+     * the computer's songs come; AVAudioFile opened those but read nothing, and the split wrote empty parts).
+     */
+    nonisolated static func decode(_ url: URL) async throws -> [Float] {
+        let asset = AVURLAsset(url: url)
+        guard let track = try await asset.loadTracks(withMediaType: .audio).first else { throw Plain("This song's file has no sound to split.") }
+        let seconds = (try? await asset.load(.duration).seconds) ?? 0
+        let reader = try AVAssetReader(asset: asset)
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
+            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 44100, AVNumberOfChannelsKey: 2,
+            AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true, AVLinearPCMIsNonInterleaved: false, AVLinearPCMIsBigEndianKey: false,
+        ])
+        output.alwaysCopiesSampleData = false
+        guard reader.canAdd(output) else { throw Plain("This song's file can't be read for a split.") }
+        reader.add(output)
+        guard reader.startReading() else { throw reader.error ?? Plain("This song's file can't be read for a split.") }
         var out = [Float]()
-        out.reserveCapacity(Int(Double(file.length) * 44100 / src.sampleRate * 2.02))
-        let inBuf = AVAudioPCMBuffer(pcmFormat: src, frameCapacity: 65536)!
-        let outBuf = AVAudioPCMBuffer(pcmFormat: dst, frameCapacity: AVAudioFrameCount(65536 * 44100 / src.sampleRate + 1024))!
-        var done = false
-        while true {
-            var err: NSError?
-            let status = conv.convert(to: outBuf, error: &err) { _, outStatus in
-                if done { outStatus.pointee = .endOfStream; return nil }
-                do {
-                    try file.read(into: inBuf)
-                } catch {
-                    done = true
-                    outStatus.pointee = .endOfStream
-                    return nil
-                }
-                if inBuf.frameLength == 0 { done = true; outStatus.pointee = .endOfStream; return nil }
-                outStatus.pointee = .haveData
-                return inBuf
-            }
-            if let err { throw err }
-            let n = Int(outBuf.frameLength)
-            if n > 0 {
-                let l = outBuf.floatChannelData![0], r = outBuf.floatChannelData![1]
-                for i in 0..<n { out.append(l[i]); out.append(r[i]) }
-            }
-            if status == .endOfStream || status == .error { break }
+        if seconds.isFinite, seconds > 0 { out.reserveCapacity(Int(seconds * 44100 * 2) + 88200) }
+        while let sample = output.copyNextSampleBuffer() {
+            guard let block = CMSampleBufferGetDataBuffer(sample) else { continue }
+            let bytes = CMBlockBufferGetDataLength(block)
+            let start = out.count
+            out.append(contentsOf: repeatElement(0, count: bytes / MemoryLayout<Float>.size))
+            _ = out.withUnsafeMutableBytes { CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: bytes, destination: $0.baseAddress! + start * MemoryLayout<Float>.size) }
         }
+        if reader.status == .failed { throw reader.error ?? Plain("This song's file stopped reading halfway.") }
+        // less than a second of sound: something's wrong with the file, and parts made from it would be silent
+        guard out.count >= 44100 * 2 else { throw Plain("This song's sound couldn't be read, so it wasn't split.") }
         return out
     }
 }

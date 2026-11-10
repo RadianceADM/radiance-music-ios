@@ -58,10 +58,27 @@ final class Mixer {
     /** The parts are what's heard now (the player's own sound is down): a party doesn't nudge their speed. */
     var playsParts: Bool { engine != nil }
 
-    /** The song's own file on the iPhone (its saved copy), if it has one. */
+    /** The song's own file on the iPhone (its saved copy), if it has one the engine can play. */
     private func ownFile(_ t: Track) -> URL? {
-        guard let f = app.paths.file(app.library.best(t).file), f.isFileURL, FileManager.default.fileExists(atPath: f.path) else { return nil }
+        guard let f = app.paths.file(app.library.best(t).file), f.isFileURL, FileManager.default.fileExists(atPath: f.path), engineReads(f) else { return nil }
         return f
+    }
+
+    @ObservationIgnored private var readable: [String: Bool] = [:]
+
+    /**
+     * The engine reads [f] (AVAudioFile): not Opus inside .m4a, as the computer's songs come, which only the player
+     * opens (2026-11-10: the song went quiet once split, the engine playing nothing in its place).
+     */
+    private func engineReads(_ f: URL) -> Bool {
+        if let r = readable[f.path] { return r }
+        var ok = false
+        if let file = try? AVAudioFile(forReading: f), let b = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 4096) {
+            ok = (try? file.read(into: b)) != nil && b.frameLength > 0
+        }
+        if !ok { print("radiance-mix: the engine can't read \(f.lastPathComponent); the player plays it") }
+        readable[f.path] = ok
+        return ok
     }
 
     /** The engine plays [t]: karaoke or the singing only, any split song with its own file here, or a saved song with effects on. */

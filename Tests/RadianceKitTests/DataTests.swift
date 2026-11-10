@@ -108,6 +108,19 @@ final class LibraryTests: XCTestCase {
         XCTAssertNil(Library.jump(firsts, 99))
     }
 
+    /** 2026-11-10: a split that read nothing left 557-byte parts, and the song went quiet; such parts are no parts. */
+    func testAnEmptyPartIsNoPart() throws {
+        let p = scratch()
+        let d = Splits.dir(p, "yt:plM0zlPlRW8")
+        try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        try Data(count: 557).write(to: d.appendingPathComponent("music.m4a"))
+        try Data(count: 557).write(to: d.appendingPathComponent("vocals.m4a"))
+        XCTAssertEqual(Splits.parts(p, "yt:plM0zlPlRW8"), [:])
+        try Data(count: 3_000_000).write(to: d.appendingPathComponent("music.m4a"))
+        try Data(count: 2_900_000).write(to: d.appendingPathComponent("vocals.m4a"))
+        XCTAssertEqual(Set(Splits.parts(p, "yt:plM0zlPlRW8").keys), ["music", "vocals"])
+    }
+
     func testUnlikedSavedFilesAreRemembered() {
         let p = scratch()
         let lib = Library(dir: p.support)
@@ -223,7 +236,7 @@ final class ImportTests: XCTestCase {
         try Data([0]).write(to: p.songs.appendingPathComponent("Maki - Dilaw.m4a"))
         try Data([0xFF, 0xD8]).write(to: p.imports.appendingPathComponent("Maki - Dilaw.jpg"))
         try "[00:01.00]Dilaw\n[00:04.00]ikaw".write(to: p.imports.appendingPathComponent("Maki - Dilaw.lrc"), atomically: true, encoding: .utf8)
-        try Data([0]).write(to: p.imports.appendingPathComponent("Maki - Dilaw.vocals.ogg"))
+        try Data(count: 600_000).write(to: p.imports.appendingPathComponent("Maki - Dilaw.vocals.ogg")) // a part with sound's size
         let list = """
         {"songs":[
           {"key":"yt:dilaw1","track":{"source":"youtube","id":"dilaw1","title":"Dilaw","artist":"Maki","album":"","seconds":240,"art":"","format":"Opus"},
