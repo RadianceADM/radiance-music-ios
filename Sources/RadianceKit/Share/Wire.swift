@@ -141,6 +141,111 @@ public enum Wire {
         URL(string: "\(base)\(path)?k=\(key)" + extra.map { "&\($0.0)=\(enc($0.1))" }.joined())!
     }
 
+    /** Bytes a second it may move now (0: as fast as it can), checked as it goes (Android's Wire.Pace). */
+    public typealias Pace = @Sendable () -> Int64
+
+    /**
+     * Keeps a transfer under its pace (Android's Paced, the same window): after each piece moved, how long to wait.
+     * A second's window, started again each second.
+     */
+    public struct Pacer: Sendable {
+        private var windowStart: UInt64?
+        private var windowBytes: Int64 = 0
+        public init() {}
+
+        /** [n] bytes moved at [now] (ns), at most [limit] a second: the wait before the next piece, ns. */
+        public mutating func wait(after n: Int, limit: Int64, now: UInt64) -> UInt64 {
+            guard limit > 0, n > 0 else { return 0 }
+            let start = windowStart ?? now
+            windowStart = start
+            windowBytes += Int64(n)
+            let should = UInt64(windowBytes) * 1_000_000_000 / UInt64(limit)
+            let took = now - start
+            if took > 1_000_000_000 {
+                windowStart = now
+                windowBytes = 0
+            }
+            return should > took ? should - took : 0
+        }
+    }
+
+    /**
+     * One file down to [to] or up from [from], paced: the task rests (suspended) when it's ahead of [pace]. With no
+     * pace it's an ordinary download or upload.
+     */
+    final class Transfer: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+        private let pace: Pace
+        private var pacer = Pacer()
+        private var out: FileHandle?
+        private var response: HTTPURLResponse?
+        private var done: CheckedContinuation<HTTPURLResponse, Error>?
+        private let queue = DispatchQueue(label: "radiance.wire")
+
+        private init(pace: @escaping Pace) { self.pace = pace }
+
+        /** GETs [url] into the file at [to] (made new). */
+        static func download(_ url: URL, to: URL, pace: @escaping Pace) async throws -> HTTPURLResponse {
+            FileManager.default.createFile(atPath: to.path, contents: nil)
+            let t = Transfer(pace: pace)
+            t.out = try FileHandle(forWritingTo: to)
+            defer { try? t.out?.close() }
+            return try await t.run { $0.dataTask(with: URLRequest(url: url, timeoutInterval: 60)) }
+        }
+
+        /** Sends the file at [from] as [request]'s body. */
+        static func upload(_ request: URLRequest, from: URL, pace: @escaping Pace) async throws -> HTTPURLResponse {
+            try await Transfer(pace: pace).run { $0.uploadTask(with: request, fromFile: from) }
+        }
+
+        private func run(_ make: @escaping (URLSession) -> URLSessionTask) async throws -> HTTPURLResponse {
+            let q = OperationQueue()
+            q.maxConcurrentOperationCount = 1
+            q.underlyingQueue = queue
+            let c = URLSessionConfiguration.ephemeral
+            c.timeoutIntervalForRequest = 60
+            c.timeoutIntervalForResource = 3600
+            let session = URLSession(configuration: c, delegate: self, delegateQueue: q)
+            defer { session.finishTasksAndInvalidate() }
+            return try await withCheckedThrowingContinuation { cont in
+                queue.async {
+                    self.done = cont
+                    make(session).resume()
+                }
+            }
+        }
+
+        /** Ahead of the pace: a rest, then on. */
+        private func rest(_ task: URLSessionTask, after n: Int) {
+            let wait = pacer.wait(after: n, limit: pace(), now: DispatchTime.now().uptimeNanoseconds)
+            guard wait > 1_000_000 else { return }
+            task.suspend()
+            queue.asyncAfter(deadline: .now() + .nanoseconds(Int(min(wait, 2_000_000_000)))) { task.resume() }
+        }
+
+        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
+                        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+            self.response = response as? HTTPURLResponse
+            completionHandler(.allow)
+        }
+
+        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+            do { try out?.write(contentsOf: data) } catch { return dataTask.cancel() }
+            rest(dataTask, after: data.count)
+        }
+
+        func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
+            rest(task, after: Int(bytesSent))
+        }
+
+        func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+            guard let done else { return }
+            self.done = nil
+            if let error { return done.resume(throwing: error) }
+            guard let h = response ?? task.response as? HTTPURLResponse else { return done.resume(throwing: Plain("The other device didn't answer.")) }
+            done.resume(returning: h)
+        }
+    }
+
     static let session: URLSession = {
         let c = URLSessionConfiguration.ephemeral
         c.timeoutIntervalForRequest = 60
@@ -166,7 +271,7 @@ public enum Wire {
     }
 
     /** Takes what's missing here of what [base] offers, into [store]. How many songs came. */
-    public static func pull(_ base: String, key: String, store: Store, cancelled: @Sendable () -> Bool = { false },
+    public static func pull(_ base: String, key: String, store: Store, pace: @escaping Pace = { 0 }, cancelled: @Sendable () -> Bool = { false },
                             progress: @escaping @Sendable (Progress) -> Void = { _ in }) async throws -> Int {
         let (d, r) = try await send(URLRequest(url: url(base, "/list", key)))
         guard r.statusCode == 200, let list = JSON.parse(d)?["songs"]?.array else { throw Plain("The other device said no. Scan its QR again.", "HTTP \(r.statusCode)") }
@@ -185,13 +290,13 @@ public enum Wire {
             if cancelled() { break }
             for kind in kinds {
                 if cancelled() { break }
-                let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("wire-\(UUID().uuidString)")
-                let (f, resp): (URL, HTTPURLResponse) = try await withCheckedThrowingContinuation { cont in
-                    session.downloadTask(with: url(base, "/file", key, [("key", item.key), ("kind", kind)])) { u, resp, e in
-                        if let e { return cont.resume(throwing: e) }
-                        guard let u, let h = resp as? HTTPURLResponse else { return cont.resume(throwing: Plain("“\(item.title)” didn't come.")) }
-                        do { try FileManager.default.moveItem(at: u, to: tmp); cont.resume(returning: (tmp, h)) } catch { cont.resume(throwing: error) }
-                    }.resume()
+                let f = FileManager.default.temporaryDirectory.appendingPathComponent("wire-\(UUID().uuidString)")
+                let resp: HTTPURLResponse
+                do {
+                    resp = try await Transfer.download(url(base, "/file", key, [("key", item.key), ("kind", kind)]), to: f, pace: pace)
+                } catch {
+                    try? FileManager.default.removeItem(at: f)
+                    throw error
                 }
                 guard resp.statusCode == 200 else { try? FileManager.default.removeItem(at: f); throw Plain("“\(item.title)” didn't come.", "HTTP \(resp.statusCode)") }
                 try await store.write(item, kind, f)
@@ -208,7 +313,7 @@ public enum Wire {
     }
 
     /** Sends [offer]'s songs that [base] hasn't got. How many went. */
-    public static func push(_ base: String, key: String, offer: Offer, cancelled: @Sendable () -> Bool = { false },
+    public static func push(_ base: String, key: String, offer: Offer, pace: @escaping Pace = { 0 }, cancelled: @Sendable () -> Bool = { false },
                             progress: @escaping @Sendable (Progress) -> Void = { _ in }) async throws -> Int {
         let items = offer.items()
         var r = URLRequest(url: url(base, "/plan", key))
@@ -233,12 +338,7 @@ public enum Wire {
                 var put = URLRequest(url: url(base, "/file", key, [("key", item.key), ("kind", kind)]))
                 put.httpMethod = "PUT"
                 put.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
-                let code: Int = try await withCheckedThrowingContinuation { cont in
-                    session.uploadTask(with: put, fromFile: f) { _, resp, e in
-                        if let e { return cont.resume(throwing: e) }
-                        cont.resume(returning: (resp as? HTTPURLResponse)?.statusCode ?? 0)
-                    }.resume()
-                }
+                let code = try await Transfer.upload(put, from: f, pace: pace).statusCode
                 guard code == 200 else { throw Plain("“\(item.title)” wasn't taken.", "HTTP \(code)") }
                 bytes += item.files[kind]?.size ?? 0
                 progress(Progress(bytes: bytes, totalBytes: total, songs: songs, totalSongs: todo.count, now: item.title))

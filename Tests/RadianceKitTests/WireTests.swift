@@ -4,6 +4,21 @@ import XCTest
 
 /** The share wire's words, as Android's WireTest has them (the same QR works across all three apps). */
 final class WireTests: XCTestCase {
+    /** Gentle with Bluetooth (Android's Paced): at 3 MB a second, 1 MB moved at once waits about a third of a second. */
+    func testThePaceKeepsATransferUnderItsLimit() {
+        var p = Wire.Pacer()
+        let mb = 1 << 20
+        let limit = Int64(3 << 20)
+        XCTAssertEqual(p.wait(after: mb, limit: limit, now: 0), 333_333_333)
+        // a third of a second on, the next MB: two thirds in all, so a third more
+        XCTAssertEqual(p.wait(after: mb, limit: limit, now: 333_333_333), 333_333_333)
+        // slower than the pace: no wait
+        XCTAssertEqual(p.wait(after: 1024, limit: limit, now: 900_000_000), 0)
+        // no pace (no Bluetooth music): never a wait
+        var free = Wire.Pacer()
+        XCTAssertEqual(free.wait(after: 50 * mb, limit: 0, now: 0), 0)
+    }
+
     func testATicketThereAndBack() {
         let t = Wire.Ticket(mode: "get", host: "192.168.1.20", port: 41234, key: "0123456789abcdef0123", name: "Bassi’s iPhone")
         XCTAssertEqual(Wire.Ticket.parse(t.uri), t)

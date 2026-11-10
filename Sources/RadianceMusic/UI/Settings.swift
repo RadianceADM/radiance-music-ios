@@ -15,6 +15,7 @@ struct SettingsScreen: View {
     @State private var asking: String?
     @State private var guide = false
     @State private var olderNews = false
+    @State private var cores = Double(Splitter.cores)
     @Environment(\.openURL) private var openURL
 
     var body: some View {
@@ -49,6 +50,23 @@ struct SettingsScreen: View {
                     Button { sharing = true } label: { Label("Share songs by QR", systemImage: "qrcode") }
                     Button { app.findSaved(auto: false) } label: { Label("Bring back songs in Files → Radiance Music", systemImage: "arrow.clockwise") }
                 } header: { Text("Your songs") }
+                Section {
+                    // how many of the iPhone's cores splitting may use (Android's Settings → Splitting)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Label("Cores", systemImage: "cpu")
+                            Spacer()
+                            Text("\(Int(cores)) of \(Splitter.mostCores)").foregroundStyle(Brand.dim).monospacedDigit()
+                        }
+                        if Splitter.mostCores > 1 {
+                            Slider(value: $cores, in: 1...Double(Splitter.mostCores), step: 1) { editing in
+                                if !editing { Splitter.cores = Int(cores) }
+                            }
+                        }
+                    }
+                } header: { Text("Splitting") } footer: {
+                    Text("Songs split here, on this iPhone. More cores split sooner; fewer keep it cooler.")
+                }
                 Section {
                     Button { guide = true } label: { Label("How to use it", systemImage: "questionmark.circle") }
                 } header: { Text("Help") }

@@ -17,6 +17,9 @@ final class WireServer: @unchecked Sendable {
     private lazy var items: [Wire.Item] = offer?.items() ?? []
     private let onProgress: @Sendable (Wire.Progress) -> Void
     private var bytes: Int64 = 0, totalBytes: Int64 = 0, songs = 0
+    /** Gentle with Bluetooth: the bytes a second it may move now (PhoneShare.pace). */
+    private let pace: Wire.Pace = PhoneShare.pace
+    private var pacer = Wire.Pacer()
 
     var port: Int { Int(listener.port?.rawValue ?? 0) }
 
@@ -162,10 +165,13 @@ final class WireServer: @unchecked Sendable {
             left -= Int64(take.count)
         }
         if left <= 0 { return then(true) }
-        c.receive(minimumIncompleteLength: 1, maximumLength: Int(min(left, 1 << 20))) { [weak self] data, _, done, err in
-            if let data, !data.isEmpty { self?.streamBody(c, out, data, left: left, then: then) }
-            else if done || err != nil { then(false) }
-            else { self?.streamBody(c, out, Data(), left: left, then: then) }
+        let wait = pacer.wait(after: first.count, limit: pace(), now: DispatchTime.now().uptimeNanoseconds)
+        queue.asyncAfter(deadline: .now() + .nanoseconds(Int(min(wait, 2_000_000_000)))) { [weak self] in
+            c.receive(minimumIncompleteLength: 1, maximumLength: Int(min(left, 256 * 1024))) { data, _, done, err in
+                if let data, !data.isEmpty { self?.streamBody(c, out, data, left: left, then: then) }
+                else if done || err != nil { then(false) }
+                else { self?.streamBody(c, out, Data(), left: left, then: then) }
+            }
         }
     }
 
@@ -184,7 +190,8 @@ final class WireServer: @unchecked Sendable {
                 guard let self, e == nil else { try? input.close(); c.cancel(); return }
                 self.bytes += Int64(chunk.count)
                 self.onProgress(Wire.Progress(bytes: self.bytes, totalBytes: 0, songs: self.songs, totalSongs: 0, now: title))
-                next()
+                let wait = self.pacer.wait(after: chunk.count, limit: self.pace(), now: DispatchTime.now().uptimeNanoseconds)
+                if wait > 1_000_000 { self.queue.asyncAfter(deadline: .now() + .nanoseconds(Int(min(wait, 2_000_000_000)))) { next() } } else { next() }
             })
         }
         next()

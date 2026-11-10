@@ -107,7 +107,7 @@ final class Splitter {
         }
         // the work itself, off the main thread
         try await Task.detached(priority: .utility) {
-            try Splitter.split(song: song, into: out, models: models, beforeBlock: check) { done in
+            try Splitter.split(song: song, into: out, models: models, threads: Splitter.coresNow(), beforeBlock: check) { done in
                 Task { @MainActor [weak self] in if self?.working?.key == key { self?.working = (key, done, "Splitting… \(Int(done * 100)) %") } }
             }
         }.value
@@ -167,18 +167,40 @@ final class Splitter {
         }
     }
 
+    // MARK: - how many cores (Android's Splits.cores, Settings → Splitting)
+
+    /** All of this iPhone's cores. */
+    nonisolated static let mostCores = max(ProcessInfo.processInfo.activeProcessorCount, 1)
+    /** While the iPhone is warm, at most this many (Android's Guard.WARM_CORES). */
+    nonisolated static let warmCores = 2
+
+    /** How many of the iPhone's cores splitting may use: more split sooner, fewer keep it cooler (4 at first). */
+    nonisolated static var cores: Int {
+        get {
+            let set = UserDefaults.standard.integer(forKey: "split.cores")
+            return min(max(set == 0 ? min(4, mostCores) : set, 1), mostCores)
+        }
+        set { UserDefaults.standard.set(min(max(newValue, 1), mostCores), forKey: "split.cores") }
+    }
+
+    /** The cores a split starting now uses: the set ones, fewer while the iPhone is warm. */
+    nonisolated static func coresNow() -> Int32 {
+        Int32(ProcessInfo.processInfo.thermalState == .fair ? min(cores, warmCores) : cores)
+    }
+
     // MARK: - the sound work (off the main thread)
 
     /**
      * [song] in two: decoded to 44.1 kHz stereo, through Spleeter, each part written as AAC beside its place, then
      * put in place (a stopped split leaves no half parts).
      */
-    nonisolated static func split(song: URL, into out: URL, models: (URL, URL), beforeBlock: () throws -> Void,
+    nonisolated static func split(song: URL, into out: URL, models: (URL, URL), threads: Int32, beforeBlock: () throws -> Void,
                                   progress: (Double) -> Void) throws {
         let pcm = try decode(song)
         let total = pcm.count / 2
-        let (env, vocals) = try Onnx.session(models.0)
-        let (_, music) = try Onnx.session(models.1)
+        print("radiance-split: on \(threads) of \(mostCores) cores")
+        let (env, vocals) = try Onnx.session(models.0, threads: threads)
+        let (_, music) = try Onnx.session(models.1, threads: threads)
         _ = env
         try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
         let format = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 2)!

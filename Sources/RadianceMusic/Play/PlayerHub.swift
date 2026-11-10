@@ -580,6 +580,8 @@ final class PlayerHub {
     }
 
     private func statusChanged(_ s: AVPlayer.TimeControlStatus) {
+        // the wire goes gently while music plays to Bluetooth (PhoneShare.pace)
+        PhoneShare.playing.value = s == .playing
         switch s {
         case .playing:
             print("radiance-play: playing “\(current?.title ?? "?")”")

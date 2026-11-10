@@ -1,5 +1,21 @@
+import AVFoundation
 import Foundation
 import RadianceKit
+
+enum PhoneShare {
+    /** Music is playing on this iPhone now (set by the player, read by the wire from any thread). */
+    static let playing = Flag()
+
+    /**
+     * Gentle with Bluetooth (Android's PhoneShare.pace): while music plays to Bluetooth headphones or a speaker, songs
+     * move at most 3 MB a second (Wi-Fi and Bluetooth share a radio; a flood of Wi-Fi can make the music stutter).
+     */
+    static let pace: Wire.Pace = {
+        let s = AVAudioSession.sharedInstance()
+        let bluetooth = s.currentRoute.outputs.contains { [.bluetoothA2DP, .bluetoothLE, .bluetoothHFP].contains($0.portType) }
+        return bluetooth && (playing.value || s.isOtherAudioPlaying) ? 3 << 20 : 0
+    }
+}
 
 /**
  * This iPhone's side of the wire (Android's share/PhoneShare.kt): what it offers (your saved liked songs, with their

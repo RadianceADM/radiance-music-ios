@@ -133,10 +133,10 @@ struct ShareScreen: View {
                 do {
                     let n: Int
                     if t.mode == "get" {
-                        n = try await Wire.pull(base, key: t.key, store: PhoneStore(app: app)) { p in Task { @MainActor in progress = p } }
+                        n = try await Wire.pull(base, key: t.key, store: PhoneStore(app: app), pace: PhoneShare.pace) { p in Task { @MainActor in progress = p } }
                         app.tell(n == 0 ? "You have all of \(t.name)'s songs already." : "\(n) songs from \(t.name) are in Liked Songs.")
                     } else {
-                        n = try await Wire.push(base, key: t.key, offer: PhoneOffer(app)) { p in Task { @MainActor in progress = p } }
+                        n = try await Wire.push(base, key: t.key, offer: PhoneOffer(app), pace: PhoneShare.pace) { p in Task { @MainActor in progress = p } }
                         app.tell(n == 0 ? "\(t.name) has all your songs already." : "Sent \(n) songs to \(t.name).")
                     }
                 } catch {
