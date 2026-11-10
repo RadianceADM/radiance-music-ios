@@ -353,11 +353,14 @@ final class AppModel {
     /** Opened from the laptop with an RM_ setting (AppModel.test): no first-open guide in the way. */
     static var checking: Bool { ProcessInfo.processInfo.environment.keys.contains { $0.hasPrefix("RM_") } }
 
-    static var deviceName: String {
+    static var deviceName: String { model == "iPhone" ? model : "Apple \(model)" }
+
+    /** Which iPhone or iPad this is ("iPhone13,2"). */
+    static var model: String {
         var u = utsname()
         uname(&u)
         let machine = withUnsafeBytes(of: &u.machine) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
-        return machine.isEmpty ? "iPhone" : "Apple \(machine)"
+        return machine.isEmpty ? "iPhone" : machine
     }
 }
 

@@ -16,6 +16,7 @@ struct SettingsScreen: View {
     @State private var guide = false
     @State private var olderNews = false
     @State private var cores = Double(Splitter.cores)
+    @State private var reporting = false
     @Environment(\.openURL) private var openURL
 
     var body: some View {
@@ -79,6 +80,9 @@ struct SettingsScreen: View {
                 }
                 whatsNew
                 Section {
+                    Button { reporting = true } label: {
+                        LabeledContent { Text("with the app's log").foregroundStyle(Brand.dim) } label: { Label("Report a problem", systemImage: "ladybug") }
+                    }
                     Button { openURL(URL(string: Links.mail(version: About.version))!) } label: {
                         LabeledContent { Text(Links.email).foregroundStyle(Brand.dim) } label: { Label("Email us", systemImage: "envelope") }
                     }
@@ -86,7 +90,7 @@ struct SettingsScreen: View {
                         LabeledContent { Text("for your computer").foregroundStyle(Brand.dim) } label: { Label("music.radianceph.com", systemImage: "globe") }
                     }
                 } header: { Text("Tell us what breaks") } footer: {
-                    Text("What you did, and what happened. A screenshot helps.")
+                    Text("Report a problem shows you everything it sends first. Nothing goes until you press Send.")
                 }
                 Section("About") {
                     LabeledContent("Version", value: About.version)
@@ -106,6 +110,7 @@ struct SettingsScreen: View {
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
             .sheet(isPresented: $sharing, onDismiss: { shareLink = nil }) { ShareScreen(opened: shareLink) }
             .fullScreenCover(isPresented: $guide) { GuideScreen { Guide.seen(); guide = false } }
+            .sheet(isPresented: $reporting) { ReportSheet() }
             .alert("Join this server?", isPresented: Binding(get: { asking != nil }, set: { if !$0 { asking = nil } }), presenting: asking) { link in
                 Button("Join") { invite = link; asking = nil; join() }
                 Button("Not now", role: .cancel) { asking = nil }
