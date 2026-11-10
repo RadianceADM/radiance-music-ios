@@ -93,6 +93,21 @@ final class LibraryTests: XCTestCase {
         XCTAssertFalse(Library(dir: p.support).isLiked(song("A", "zebra").key))
     }
 
+    func testTheRailFilesEachSongUnderItsLetter() {
+        let songs = Library.sortedByTitle(["zebra", "\"Quoted\" song", "Árbol", "123 go", "beta", "élan", "Bravo"].map { song("A", $0) })
+        XCTAssertEqual(songs.map(Library.letter), ["A", "B", "B", "E", "Q", "Z", "#"])
+        let firsts = Library.firsts(songs)
+        XCTAssertEqual(firsts["B"], 1)
+        XCTAssertEqual(firsts["#"], 6)
+        XCTAssertNil(firsts["C"])
+        // a letter with no songs jumps to the next one that has them; past the last, nothing
+        XCTAssertEqual(Library.jump(firsts, Library.rail.firstIndex(of: "C")!), 3)
+        XCTAssertEqual(Library.jump(firsts, Library.rail.firstIndex(of: "R")!), 5)
+        XCTAssertEqual(Library.jump(firsts, Library.rail.count - 1), 6)
+        XCTAssertNil(Library.jump([:], 0))
+        XCTAssertNil(Library.jump(firsts, 99))
+    }
+
     func testUnlikedSavedFilesAreRemembered() {
         let p = scratch()
         let lib = Library(dir: p.support)

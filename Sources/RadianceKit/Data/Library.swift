@@ -118,6 +118,28 @@ public final class Library {
         }.map(\.element)
     }
 
+    /** The A to Z rail's letters, in the order songs are filed (as the computer's). */
+    public static let rail: [Character] = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ#")
+
+    /** A song's letter on the rail: its title's first letter as filed, or # for anything else. */
+    public static func letter(_ t: Track) -> Character {
+        guard let c = fileKey(t.title).1.unicodeScalars.first, ("a"..."z").contains(c) else { return "#" }
+        return Character(String(c).uppercased())
+    }
+
+    /** Where each letter's songs start in a list filed A to Z (letters with no songs are left out). */
+    public static func firsts(_ tracks: [Track]) -> [Character: Int] {
+        var m: [Character: Int] = [:]
+        for (i, t) in tracks.enumerated() where m[letter(t)] == nil { m[letter(t)] = i }
+        return m
+    }
+
+    /** The song to jump to for the rail's letter at `i`: that letter's first song, or the next letter's with songs. */
+    public static func jump(_ firsts: [Character: Int], _ i: Int) -> Int? {
+        guard rail.indices.contains(i) else { return nil }
+        return rail[i...].lazy.compactMap { firsts[$0] }.first
+    }
+
     public static func fileKey(_ title: String) -> (Int, String) {
         let low = fold(title).lowercased()
         let key = String(String.UnicodeScalarView(low.unicodeScalars.drop { !$0.isLetterOrDigit }))
