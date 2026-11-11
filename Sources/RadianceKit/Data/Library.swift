@@ -46,6 +46,14 @@ public final class Library {
         if let f = had?.file { keepUnliked(unliked.union([f])) }
     }
 
+    /** Out of Liked Songs with its files gone (Remove from library): nothing of it is kept to find again. */
+    public func remove(_ t: Track) {
+        let had = liked.first { $0.key == t.key }
+        liked = liked.filter { $0.key != t.key }
+        save("liked.json", liked)
+        if let f = had?.file ?? t.file, unliked.contains(f) { keepUnliked(unliked.subtracting([f])) }
+    }
+
     private func keepUnliked(_ files: Set<String>) {
         unliked = files
         write("unliked.json", JSON.array(files.sorted().map { .string($0) }).data())

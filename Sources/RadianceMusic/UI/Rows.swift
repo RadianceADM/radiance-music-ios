@@ -106,6 +106,7 @@ extension TrackRow where Trailing == EmptyView {
 /** A song's menu: play it next, add it to the queue, songs like it, like it. */
 struct SongMenu: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.menuPlace) private var place
     let track: Track
 
     var body: some View {
@@ -124,6 +125,41 @@ struct SongMenu: View {
         Button { UIPasteboard.general.string = Links.song(track); app.tell("Link copied.") } label: {
             Label("Copy link", systemImage: "link")
         }
+        // a liked song, with all it has on this iPhone (radiance-music#77): it asks first (RemoveAsk)
+        if app.isLiked(track) {
+            Button(role: .destructive) { app.removing = (track, place) } label: { Label("Remove from library", systemImage: "trash") }
+        }
+    }
+}
+
+/** Which screen a song's menu is on, so "Remove from library" asks there (a sheet covers the screens under it). */
+private struct MenuPlace: EnvironmentKey {
+    static let defaultValue = "main"
+}
+
+extension EnvironmentValues {
+    var menuPlace: String {
+        get { self[MenuPlace.self] }
+        set { self[MenuPlace.self] = newValue }
+    }
+}
+
+/** "Remove from library" asks first, on the screen [place] (radiance-music#77's words). */
+struct RemoveAsk: ViewModifier {
+    @Environment(AppModel.self) private var app
+    let place: String
+
+    func body(content: Content) -> some View {
+        let asking = app.removing?.place == place ? app.removing?.track : nil
+        content
+            .environment(\.menuPlace, place)
+            .confirmationDialog("Remove “\(asking?.title ?? "")” from your library?", isPresented: Binding(
+                get: { asking != nil }, set: { if !$0 { app.removing = nil } }), titleVisibility: .visible, presenting: asking) { t in
+                Button("Remove", role: .destructive) { app.removing = nil; app.remove(t) }
+                Button("Cancel", role: .cancel) { app.removing = nil }
+            } message: { _ in
+                Text("Its saved file, parts, lyrics and cover are removed too.")
+            }
     }
 }
 

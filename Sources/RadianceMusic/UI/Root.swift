@@ -37,6 +37,7 @@ struct RootView: View {
         .sheet(isPresented: $nowPlaying) { NowPlayingScreen() }
         .sheet(isPresented: $settings) { SettingsScreen() }
         .sheet(isPresented: $party.shown) { PartyScreen() }
+        .modifier(RemoveAsk(place: "main"))
         .fullScreenCover(isPresented: $guide) { GuideScreen { Guide.seen(); guide = false } }
         .onChange(of: phase) { _, p in if p != .active { app.player.saveSession() } }
         // a link opened the app: Settings takes it (Now Playing steps aside first: one sheet at a time)

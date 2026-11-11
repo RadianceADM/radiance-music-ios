@@ -60,6 +60,7 @@ struct NowPlayingScreen: View {
                 }
             }
         }
+        .modifier(RemoveAsk(place: "nowplaying"))
         .sheet(isPresented: $showQueue) { QueueScreen() }
         .sheet(isPresented: $showMixer) { if let t = app.player.current { MixerSheet(track: t) } }
         .sheet(isPresented: Binding(get: { sharing != nil }, set: { if !$0 { sharing = nil } })) {
@@ -348,6 +349,7 @@ struct QueueScreen: View {
             .scrollContentBackground(.hidden)
             .background(Brand.sheet)
             .navigationTitle("Up next")
+            .modifier(RemoveAsk(place: "queue"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {

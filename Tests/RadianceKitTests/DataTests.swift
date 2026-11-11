@@ -121,6 +121,36 @@ final class LibraryTests: XCTestCase {
         XCTAssertEqual(Set(Splits.parts(p, "yt:plM0zlPlRW8").keys), ["music", "vocals"])
     }
 
+    /** radiance-music#77 on the iPhone: Remove from library takes the song out and deletes all it had here. */
+    func testRemoveFromLibraryDeletesItsFiles() throws {
+        let p = scratch()
+        let lib = Library(dir: p.support)
+        var t = song("Maki", "Dilaw")
+        let file = p.songs.appendingPathComponent("Maki - Dilaw.m4a")
+        try Data(count: 10).write(to: file)
+        t.file = p.name(of: file)
+        lib.like(t)
+        try Data([0xFF, 0xD8]).write(to: Saver.coverFile(p, t))
+        try "[00:01.00]Dilaw".write(to: Saver.lyricsFile(p, t), atomically: true, encoding: .utf8)
+        let parts = Splits.dir(p, t.key)
+        try FileManager.default.createDirectory(at: parts, withIntermediateDirectories: true)
+        try Data(count: 20_000).write(to: parts.appendingPathComponent("vocals.m4a"))
+        // one of the computer's parts, sent along with it
+        let theirs = p.imports.appendingPathComponent("Maki - Dilaw.drums.m4a")
+        try Data(count: 20_000).write(to: theirs)
+        let list = #"{"songs":[{"key":"\#(t.key)","parts":{"drums":"Maki - Dilaw.drums.m4a"}}]}"#
+        try list.write(to: p.imports.appendingPathComponent("library.json"), atomically: true, encoding: .utf8)
+
+        Saver.remove(p, t)
+        lib.remove(t)
+        XCTAssertFalse(lib.isLiked(t.key))
+        for f in [file, Saver.coverFile(p, t), Saver.lyricsFile(p, t), parts, theirs] {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: f.path), f.lastPathComponent)
+        }
+        XCTAssertFalse(lib.unlikedFiles().contains(t.file!)) // nothing kept to find again
+        XCTAssertFalse(Library(dir: p.support).isLiked(t.key))
+    }
+
     func testUnlikedSavedFilesAreRemembered() {
         let p = scratch()
         let lib = Library(dir: p.support)

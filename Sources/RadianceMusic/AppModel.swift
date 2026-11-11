@@ -107,6 +107,22 @@ final class AppModel {
 
     func isLiked(_ t: Track) -> Bool { library.isLiked(t.key) }
 
+    /** A song asked to go from your library (it asks first: RemoveAsk), and the screen asking. */
+    var removing: (track: Track, place: String)?
+
+    /**
+     * Remove from library (radiance-music#77; owner 2026-11-12, the iPhone too): out of Liked Songs, and its saved
+     * file, parts, lyrics and cover deleted from this iPhone. The heart still only unlikes.
+     */
+    func remove(_ t: Track) {
+        let best = library.best(t)
+        Saver.remove(paths, best)
+        library.remove(best)
+        if player.current?.key == t.key { mixer.songChanged(t) }
+        Log.say("library", "removed “\(t.title)” and its files")
+        tell("Removed “\(t.title)” from your library.")
+    }
+
     func toggleLike(_ t: Track) {
         if library.isLiked(t.key) {
             library.unlike(t)

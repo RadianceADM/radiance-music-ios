@@ -117,6 +117,16 @@ public enum Saver {
         return found
     }
 
+    /**
+     * Remove from library (radiance-music#77, owner 2026-11-12, the iPhone too): the song's saved file, its parts (split
+     * here or sent from the computer), its lyrics and its cover, deleted.
+     */
+    public static func remove(_ p: Paths, _ t: Track) {
+        delete(p, t)
+        Splits.forget(p, t.key)
+        for f in Import.files(p, t.key) { try? FileManager.default.removeItem(at: f) }
+    }
+
     /** The song's files gone (it was unliked and you chose to delete it). */
     public static func delete(_ p: Paths, _ t: Track) {
         let fm = FileManager.default

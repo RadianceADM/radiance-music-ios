@@ -35,6 +35,16 @@ public enum Import {
         return out
     }
 
+    /** Everything the computer sent along for [key] (its cover, lyrics and parts in Documents/Library), that's here. */
+    public static func files(_ p: Paths, _ key: String) -> [URL] {
+        guard let d = try? Data(contentsOf: list(p)), let songs = JSON.parse(d)?["songs"]?.array,
+              let e = songs.first(where: { $0["key"]?.string == key }) else { return [] }
+        var names = ["cover", "lrc", "lyricsfile"].compactMap { e[$0]?.string }
+        names += (e["parts"]?.object ?? [:]).values.compactMap { $0.string }
+        return names.filter { !$0.isEmpty }.map { p.imports.appendingPathComponent($0) }
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
     /** Reads it into Liked Songs. How many songs came in. */
     @MainActor
     public static func run(_ p: Paths, _ library: Library) throws -> Int {
